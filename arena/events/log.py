@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +55,10 @@ class EventLog:
         if self._file is not None:
             self._file.close()
             self._file = None
+
+
+def new_match_id() -> str:
+    return datetime.now().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
 
 
 def truncate(text: str, limit: int = MAX_RAW_CHARS) -> str:

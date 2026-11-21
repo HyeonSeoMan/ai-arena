@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Arena</title>
+<style>
+  :root {
+    --bg: #f4f1ea; --panel: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --line: #e3ded3;
+    --wood: #dcb36b; --grid: #5a4320; --accent: #2f6fde; --bad: #c8412b; --good: #2c8a4b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16171a; --panel: #212226; --ink: #ececef; --muted: #9a9aa2; --line: #33353b;
+            --wood: #b48a45; --grid: #2e2210; --accent: #6b9bff; --bad: #ff7a63; --good: #5fcf86; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: .02em; }
+  header .spacer { flex: 1; }
+  select, button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+                   border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  main { display: grid; grid-template-columns: minmax(280px, 560px) minmax(280px, 1fr); gap: 16px; padding: 16px; max-width: 1200px; margin: 0 auto; }
+  @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  canvas { width: 100%; aspect-ratio: 1; display: block; border-radius: 8px; }
+  .players { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .player { border: 2px solid transparent; border-radius: 10px; padding: 10px; background: var(--bg); }
+  .player.active { border-color: var(--accent); }
+  .player .name { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .stone { width: 14px; height: 14px; border-radius: 50%; display: inline-block; border: 1px solid #000; }
+  .stone.b { background: #111; } .stone.w { background: #f6f6f6; }
+  .player .sub { color: var(--muted); font-variant-numeric: tabular-nums; min-height: 1.4em; }
+  #status { font-weight: 600; margin: 0 0 12px; min-height: 1.4em; }
+  #status.win { color: var(--good); }
+  .replay { display: flex; gap: 6px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+  .replay input[type=range] { flex: 1; min-width: 120px; }
+  .replay .pos { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 64px; text-align: right; }
+  #feed { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow-y: auto; }
+  #feed li { border-top: 1px solid var(--line); padding: 8px 2px; }
+  #feed li:first-child { border-top: 0; }
+  #feed .meta { color: var(--muted); font-size: 12px; }
+  #feed .bad { color: var(--bad); }
+  #feed details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  #feed pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); padding: 8px; border-radius: 6px; margin: 6px 0 0; font-size: 12px; }
+  .conn { font-size: 12px; color: var(--muted); }
+  .conn.on::before { content: "● "; color: var(--good); } .conn.off::before { content: "● "; color: var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1>AI Arena · 오목 관전</h1>
+  <span id="conn" class="conn off">연결 중</span>
+  <span class="spacer"></span>
+  <select id="source" aria-label="보기 선택"><option value="live">실시간</option></select>
+  <button id="rematch" class="primary" disabled>재대결 (흑백 교대)</button>
+</header>
+<main>
+  <section class="card">
+    <canvas id="board" width="720" height="720" aria-label="오목판"></canvas>
+    <div class="replay" id="replay" hidden>
+      <button data-step="first" aria-label="처음">⏮</button>
+      <button data-step="prev" aria-label="이전 수">◀</button>
+      <button data-step="play" id="playBtn" aria-label="자동 재생">▶ 재생</button>
+      <button data-step="next" aria-label="다음 수">▶</button>
+      <button data-step="last" aria-label="마지막">⏭</button>
+      <input type="range" id="scrub" min="0" max="0" value="0" aria-label="수 위치">
+      <span class="pos" id="pos">0 / 0</span>
+    </div>
+  </section>
+  <section class="card">
+    <div class="players">
+      <div class="player" id="p1"><div class="name"><span class="stone b"></span><span class="label">흑</span></div><div class="sub"></div></div>
+      <div class="player" id="p2"><div class="name"><span class="stone w"></span><span class="label">백</span></div><div class="sub"></div></div>
+    </div>
+    <p id="status">대기 중</p>
+    <ul id="feed"></ul>
+  </section>
+</main>
+<script>
+const SIZE = 9;
+const COLOR = {1: "흑", 2: "백"};
+const REASON = {
+  five_in_row: "5목 완성", board_full: "보드 가득 참", forfeit: "기권", time_limit: "경기 시간 만료",
+  occupied: "이미 돌이 있는 칸", out_of_bounds: "보드 밖 좌표", not_integer: "정수가 아닌 좌표",
+  invalid_response: "응답 형식 오류", game_over: "경기 종료 후 착수",
+};
+
+// Reduce an event list into a viewable state. Live and replay share this.
+function reduce(events) {
+  const s = { board: Array.from({length: SIZE}, () => Array(SIZE).fill(0)), moves: [], names: {1: "", 2: ""},
+              current: null, since: null, ended: null, feed: [] };
+  for (const e of events) {
+    switch (e.type) {
+      case "match_started": s.names = {1: e.black, 2: e.white}; s.matchId = e.match_id; break;
+      case "turn_started": s.current = e.player; s.since = e.ts; break;
+      case "agent_responded": s.feed.push(e); break;
+      case "move_rejected": s.feed.push(e); s.since = e.ts; break;
+      case "agent_timeout": s.feed.push(e); break;
+      case "move_applied": s.board[e.row][e.col] = e.player; s.moves.push(e); s.feed.push(e); break;
+      case "match_ended": s.ended = e; s.current = null; s.feed.push(e); break;
+    }
+  }
+  return s;
+}
+
+const canvas = document.getElementById("board");
+const ctx = canvas.getContext("2d");
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+function draw(s) {
+  const W = canvas.width, pad = W * 0.08, step = (W - 2 * pad) / (SIZE - 1);
+  ctx.fillStyle = css("--wood"); ctx.fillRect(0, 0, W, W);
+  ctx.strokeStyle = css("--grid"); ctx.lineWidth = 2; ctx.fillStyle = css("--grid");
+  ctx.font = `${Math.round(step * 0.28)}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (let i = 0; i < SIZE; i++) {
+    const p = pad + i * step;
+    ctx.beginPath(); ctx.moveTo(pad, p); ctx.lineTo(W - pad, p); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(p, pad); ctx.lineTo(p, W - pad); ctx.stroke();
+    ctx.fillText(i, p, pad * 0.45); ctx.fillText(i, pad * 0.45, p);
+  }
+  for (const [r, c] of [[2, 2], [2, 6], [4, 4], [6, 2], [6, 6]]) {
+    ctx.beginPath(); ctx.arc(pad + c * step, pad + r * step, step * 0.07, 0, 7); ctx.fill();
+  }
+  const order = new Map(s.moves.map((m, i) => [`${m.row},${m.col}`, i + 1]));
+  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+    const v = s.board[r][c]; if (!v) continue;
+    const x = pad + c * step, y = pad + r * step, rad = step * 0.43;
+    const g = ctx.createRadialGradient(x - rad * .35, y - rad * .35, rad * .1, x, y, rad);
+    if (v === 1) { g.addColorStop(0, "#555"); g.addColorStop(1, "#0b0b0b"); }
+    else { g.addColorStop(0, "#ffffff"); g.addColorStop(1, "#cfcfcf"); }
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, rad, 0, 7); ctx.fill();
+    ctx.fillStyle = v === 1 ? "#eee" : "#222";
+    ctx.font = `${Math.round(step * 0.3)}px sans-serif`; ctx.fillText(order.get(`${r},${c}`), x, y + 1);
+  }
+  const last = s.moves[s.moves.length - 1];
+  if (last) {
+    ctx.strokeStyle = "#e0402a"; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(pad + last.col * step, pad + last.row * step, step * 0.47, 0, 7); ctx.stroke();
+  }
+}
+
+function esc(t) { return String(t ?? "").replace(/[&<>"]/g, ch => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[ch])); }
+
+function feedItem(e, names) {
+  const who = `${COLOR[e.player] ?? ""} ${esc(names[e.player] ?? "")}`;
+  switch (e.type) {
+    case "agent_responded": {
+      const secs = (e.elapsed_ms / 1000).toFixed(1);
+      const what = e.error ? `<span class="bad">${esc(e.error)}</span>` : `→ (${esc(e.row)}, ${esc(e.col)})`;
+      const raw = e.raw ? `<details><summary>응답 원문</summary><pre>${esc(e.raw)}</pre></details>` : "";
+      return `<div>${who} ${what}</div><div class="meta">${e.turn}수 · 시도 ${e.attempt} · ${secs}초</div>${raw}`;
+    }
+    case "move_rejected": return `<div class="bad">${who} 착수 거부: ${esc(REASON[e.reason] ?? e.reason)}</div><div class="meta">${esc(e.message)}</div>`;
+    case "agent_timeout": return `<div class="bad">${who} 시간 초과 (${(e.elapsed_ms / 1000).toFixed(1)}초)</div>`;
+    case "move_applied": return `<div class="meta">${e.turn}수 ${COLOR[e.player]} (${e.row}, ${e.col}) 착수</div>`;
+    case "match_ended": return `<div><b>${esc(resultText(e, names))}</b></div>`;
+  }
+  return "";
+}
+
+function resultText(e, names) {
+  const reason = REASON[e.reason] ?? e.reason;
+  if (!e.winner) return `무승부 · ${reason}`;
+  return `${COLOR[e.winner]} ${names[e.winner]} 승리 · ${reason}${e.detail ? ` (${e.detail})` : ""}`;
+}
+
+let view = reduce([]);
+function render(s) {
+  view = s;
+  draw(s);
+  for (const p of [1, 2]) {
+    const el = document.getElementById(`p${p}`);
+    el.querySelector(".label").textContent = `${COLOR[p]} · ${s.names[p] || "-"}`;
+    el.classList.toggle("active", s.current === p);
+  }
+  const status = document.getElementById("status");
+  status.classList.toggle("win", !!s.ended);
+  status.textContent = s.ended ? resultText(s.ended, s.names)
+    : s.current ? `${s.moves.length + 1}수 · ${COLOR[s.current]} ${s.names[s.current]} 차례` : "대기 중";
+  const feed = document.getElementById("feed");
+  const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
+  feed.innerHTML = s.feed.map(e => `<li>${feedItem(e, s.names)}</li>`).join("");
+  if (atBottom) feed.scrollTop = feed.scrollHeight;
+  tick();
+}
+
+// Thinking timer for the side to move (live only).
+function tick() {
+  for (const p of [1, 2]) {
+    const sub = document.querySelector(`#p${p} .sub`);
+    sub.textContent = mode === "live" && view.current === p && view.since
+      ? `생각 중… ${Math.max(0, Date.now() / 1000 - view.since).toFixed(0)}초` : "";
+  }
+}
+setInterval(tick, 500);
+
+// ---- live mode ----
+let mode = "live", liveEvents = [], ws;
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  const conn = document.getElementById("conn");
+  ws.onopen = () => { conn.className = "conn on"; conn.textContent = "연결됨"; liveEvents = []; };
+  ws.onclose = () => { conn.className = "conn off"; conn.textContent = "연결 끊김 · 재연결 중"; setTimeout(connect, 1500); };
+  ws.onmessage = msg => {
+    const e = JSON.parse(msg.data);
+    if (e.type === "match_started") { liveEvents = []; loadMatchList(); }
+    liveEvents.push(e);
+    if (e.type === "match_ended") loadMatchList();
+    if (mode === "live") render(reduce(liveEvents));
+    refreshRematch();
+  };
+}
+
+const rematchBtn = document.getElementById("rematch");
+function refreshRematch() {
+  const last = liveEvents[liveEvents.length - 1];
+  rematchBtn.disabled = liveEvents.length > 0 && last.type !== "match_ended";
+}
+rematchBtn.onclick = async () => {
+  rematchBtn.disabled = true;
+  const res = await fetch("/api/matches", {method: "POST"});
+  if (!res.ok) refreshRematch();
+  source.value = "live"; switchSource();
+};
+
+// ---- replay mode ----
+const source = document.getElementById("source");
+const replayBox = document.getElementById("replay"), scrub = document.getElementById("scrub");
+let replayEvents = [], moveIdx = [], cursor = 0, player = null;
+
+async function loadMatchList() {
+  const list = await (await fetch("/api/matches")).json();
+  const keep = source.value;
+  source.innerHTML = `<option value="live">실시간</option>` + list.filter(m => m.finished).map(m => {
+    const res = m.winner ? `${COLOR[m.winner]} 승` : "무승부";
+    return `<option value="${esc(m.match_id)}">${esc(m.match_id)} · ${esc(m.black)} vs ${esc(m.white)} · ${res}</option>`;
+  }).join("");
+  source.value = [...source.options].some(o => o.value === keep) ? keep : "live";
+}
+
+async function switchSource() {
+  stopPlay();
+  mode = source.value === "live" ? "live" : "replay";
+  replayBox.hidden = mode === "live";
+  if (mode === "live") return render(reduce(liveEvents));
+  replayEvents = await (await fetch(`/api/matches/${encodeURIComponent(source.value)}`)).json();
+  moveIdx = replayEvents.reduce((acc, e, i) => (e.type === "move_applied" && acc.push(i + 1), acc), [0]);
+  // moveIdx[k] = slice end that shows exactly k moves (0..total).
+  scrub.max = moveIdx.length - 1;
+  cursor = moveIdx.length - 1;
+  showReplayAt(cursor);
+}
+
+function showReplayAt(k) {
+  cursor = Math.max(0, Math.min(moveIdx.length - 1, k));
+  const end = cursor === moveIdx.length - 1 ? replayEvents.length : moveIdx[cursor];
+  render(reduce(replayEvents.slice(0, end)));
+  scrub.value = cursor;
+  document.getElementById("pos").textContent = `${cursor} / ${moveIdx.length - 1}`;
+}
+
+function stopPlay() { clearInterval(player); player = null; document.getElementById("playBtn").textContent = "▶ 재생"; }
+replayBox.addEventListener("click", ev => {
+  const step = ev.target.dataset.step; if (!step) return;
+  if (step === "play") {
+    if (player) return stopPlay();
+    if (cursor >= moveIdx.length - 1) showReplayAt(0);
+    document.getElementById("playBtn").textContent = "⏸ 정지";
+    player = setInterval(() => { showReplayAt(cursor + 1); if (cursor >= moveIdx.length - 1) stopPlay(); }, 700);
+    return;
+  }
+  stopPlay();
+  showReplayAt({first: 0, prev: cursor - 1, next: cursor + 1, last: moveIdx.length - 1}[step]);
+});
+scrub.oninput = () => { stopPlay(); showReplayAt(+scrub.value); };
+source.onchange = switchSource;
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => render(view));
+
+render(view);
+loadMatchList();
+connect();
+</script>
+</body>
+</html>

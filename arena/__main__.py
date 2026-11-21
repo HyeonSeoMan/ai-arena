@@ -1,9 +1,11 @@
 """Command-line entry point.
 
+    uv run python -m arena serve --black claude --white codex     # watch live at http://127.0.0.1:8000
     uv run python -m arena play --black heuristic --white random --games 2
     uv run python -m arena replay matches/<match_id>.jsonl
 
-Only offline dummy agents are available at this stage.
+`claude` and `codex` run the subscription-authenticated CLIs and require the
+billing preflight to pass; the other agents are offline dummies.
 """
 
 from __future__ import annotations
@@ -11,26 +13,39 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-import uuid
-from datetime import datetime
+import webbrowser
 from pathlib import Path
 
 from arena.agents import HeuristicAgent, RandomAgent
+from arena.agents.billing import BillingGuardError, preflight
+from arena.agents.cli import ClaudeCodeAgent, CodexAgent
 from arena.engine import BLACK, Game
 from arena.events import EventLog, load_events, verify
+from arena.events.log import new_match_id
 from arena.runner import MatchConfig, run_match
 
 MATCHES_DIR = Path("matches")
 COLOR_NAMES = {1: "black", 2: "white"}
 
 AGENTS = {
-    "random": lambda name, seed: RandomAgent(name=name, seed=seed),
-    "heuristic": lambda name, seed: HeuristicAgent(name=name, seed=seed),
+    "random": lambda name, args: RandomAgent(name=name, seed=args.seed),
+    "heuristic": lambda name, args: HeuristicAgent(name=name, seed=args.seed, delay=args.dummy_delay),
+    "claude": lambda name, args: ClaudeCodeAgent(name=name),
+    "codex": lambda name, args: CodexAgent(name=name),
 }
 
 
-def new_match_id() -> str:
-    return datetime.now().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+def make_agents(args: argparse.Namespace):
+    if args.black == args.white:
+        names = (f"{args.black}-A", f"{args.white}-B")
+    else:
+        names = (args.black, args.white)
+    preflight({args.black, args.white})  # no-op for dummy agents
+    return AGENTS[args.black](names[0], args), AGENTS[args.white](names[1], args)
+
+
+def make_config(args: argparse.Namespace) -> MatchConfig:
+    return MatchConfig(turn_timeout=args.turn_timeout, max_retries=args.max_retries, match_timeout=args.match_timeout)
 
 
 def describe(game: Game, black: str, white: str) -> str:
@@ -42,10 +57,8 @@ def describe(game: Game, black: str, white: str) -> str:
 
 
 async def play(args: argparse.Namespace) -> int:
-    config = MatchConfig(turn_timeout=args.turn_timeout, max_retries=args.max_retries, match_timeout=args.match_timeout)
-    first = AGENTS[args.black](f"{args.black}-A", args.seed)
-    second = AGENTS[args.white](f"{args.white}-B", None if args.seed is None else args.seed + 1)
-
+    first, second = make_agents(args)
+    config = make_config(args)
     for i in range(args.games):
         # Rematches alternate colours.
         black, white = (first, second) if i % 2 == 0 else (second, first)
@@ -63,6 +76,31 @@ async def play(args: argparse.Namespace) -> int:
     return 0
 
 
+async def serve(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    from arena.web.server import HOST, Arena, create_app
+
+    first, second = make_agents(args)
+    arena = Arena(first, second, make_config(args), MATCHES_DIR)
+    server = uvicorn.Server(uvicorn.Config(create_app(arena), host=HOST, port=args.port, log_level="warning"))
+    url = f"http://{HOST}:{args.port}"
+
+    async def start_when_ready() -> None:
+        while not server.started:
+            await asyncio.sleep(0.05)
+        print(f"spectate at {url}  (Ctrl+C to stop)", flush=True)
+        if not args.no_browser:
+            webbrowser.open(url)
+        await asyncio.sleep(args.start_delay)  # give the browser a moment to connect
+        arena.start_match()
+
+    starter = asyncio.create_task(start_when_ready())
+    await server.serve()
+    starter.cancel()
+    return 0
+
+
 def replay_cmd(args: argparse.Namespace) -> int:
     events = load_events(Path(args.log))
     check = verify(events)
@@ -74,25 +112,44 @@ def replay_cmd(args: argparse.Namespace) -> int:
     return 1
 
 
+def add_match_options(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--black", choices=AGENTS, default="heuristic")
+    p.add_argument("--white", choices=AGENTS, default="random")
+    p.add_argument("--seed", type=int, default=None)
+    p.add_argument("--dummy-delay", type=float, default=0.0, help="thinking time for heuristic agents (seconds)")
+    p.add_argument("--turn-timeout", type=float, default=MatchConfig.turn_timeout)
+    p.add_argument("--max-retries", type=int, default=MatchConfig.max_retries)
+    p.add_argument("--match-timeout", type=float, default=MatchConfig.match_timeout)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="arena")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("play", help="run match(es) between agents")
-    p.add_argument("--black", choices=AGENTS, default="heuristic")
-    p.add_argument("--white", choices=AGENTS, default="random")
+    p = sub.add_parser("play", help="run match(es) in the terminal")
+    add_match_options(p)
     p.add_argument("--games", type=int, default=1)
-    p.add_argument("--seed", type=int, default=None)
-    p.add_argument("--turn-timeout", type=float, default=MatchConfig.turn_timeout)
-    p.add_argument("--max-retries", type=int, default=MatchConfig.max_retries)
-    p.add_argument("--match-timeout", type=float, default=MatchConfig.match_timeout)
+
+    s = sub.add_parser("serve", help="run a match and spectate it in the browser (127.0.0.1 only)")
+    add_match_options(s)
+    s.add_argument("--port", type=int, default=8000)
+    s.add_argument("--no-browser", action="store_true")
+    s.add_argument("--start-delay", type=float, default=2.0)
 
     r = sub.add_parser("replay", help="verify a match log by replaying it")
     r.add_argument("log")
 
     args = parser.parse_args(argv)
-    if args.command == "play":
-        return asyncio.run(play(args))
+    try:
+        if args.command == "play":
+            return asyncio.run(play(args))
+        if args.command == "serve":
+            return asyncio.run(serve(args))
+    except BillingGuardError as exc:
+        print(f"[billing] {exc}", file=sys.stderr)
+        return 2
+    except KeyboardInterrupt:
+        return 130
     return replay_cmd(args)
 
 
