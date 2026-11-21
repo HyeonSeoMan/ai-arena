@@ -3,6 +3,8 @@
     uv run python -m arena serve --black claude --white codex     # watch live at http://127.0.0.1:8000
     uv run python -m arena play --black heuristic --white random --games 2
     uv run python -m arena replay matches/<match_id>.jsonl
+    uv run python -m arena pong --left claude --right codex     # coach pong, watch live
+    uv run python -m arena pong --left random --right fixed --fast   # offline, terminal only
 
 `claude` and `codex` run the subscription-authenticated CLIs and require the
 billing preflight to pass; the other agents are offline dummies.
@@ -22,9 +24,13 @@ from arena.agents.cli import ClaudeCodeAgent, CodexAgent
 from arena.engine import BLACK, Game
 from arena.events import EventLog, load_events, verify
 from arena.events.log import new_match_id
+from arena.pong.coach import FixedCoach, LLMCoach, RandomCoach
+from arena.pong.match import PongConfig, run_pong
+from arena.pong.replay import verify_pong
 from arena.runner import MatchConfig, run_match
 
 MATCHES_DIR = Path("matches")
+PONG_DIR = MATCHES_DIR / "pong"
 COLOR_NAMES = {1: "black", 2: "white"}
 
 AGENTS = {
@@ -77,12 +83,20 @@ async def play(args: argparse.Namespace) -> int:
 
 
 async def serve(args: argparse.Namespace) -> int:
-    import uvicorn
-
-    from arena.web.server import HOST, Arena, create_app
+    from arena.web.server import Arena
 
     first, second = make_agents(args)
-    arena = Arena(first, second, make_config(args), MATCHES_DIR)
+    config = make_config(args)
+    arena = Arena(first, second, lambda a, b, log: run_match(a, b, log, config), MATCHES_DIR)
+    await run_server(arena, args)
+    return 0
+
+
+async def run_server(arena, args: argparse.Namespace) -> None:
+    import uvicorn
+
+    from arena.web.server import HOST, create_app
+
     server = uvicorn.Server(uvicorn.Config(create_app(arena), host=HOST, port=args.port, log_level="warning"))
     url = f"http://{HOST}:{args.port}"
 
@@ -98,11 +112,50 @@ async def serve(args: argparse.Namespace) -> int:
     starter = asyncio.create_task(start_when_ready())
     await server.serve()
     starter.cancel()
+
+
+PONG_COACHES = {
+    "random": lambda name, args: RandomCoach(name=name, seed=args.seed, delay=args.dummy_delay),
+    "fixed": lambda name, args: FixedCoach(name=name, delay=args.dummy_delay),
+    "claude": lambda name, args: LLMCoach(ClaudeCodeAgent(name=name)),
+    "codex": lambda name, args: LLMCoach(CodexAgent(name=name)),
+}
+
+
+async def pong(args: argparse.Namespace) -> int:
+    names = (f"{args.left}-A", f"{args.right}-B") if args.left == args.right else (args.left, args.right)
+    preflight({args.left, args.right})
+    first = PONG_COACHES[args.left](names[0], args)
+    second = PONG_COACHES[args.right](names[1], args)
+    config = PongConfig(points_to_win=args.points, timeout_seconds=args.timeout, realtime=not args.fast)
+
+    if args.fast:
+        match_id = new_match_id()
+        log = EventLog(match_id, PONG_DIR / f"{match_id}.jsonl")
+        try:
+            winner, score = await run_pong(first, second, log, config)
+        finally:
+            log.close()
+        print(f"{first.name} {score[0]} : {score[1]} {second.name}  -> {(first, second)[winner].name} wins")
+        print(f"log: {log.path}")
+        return 0
+
+    from arena.web.server import Arena
+
+    arena = Arena(first, second, lambda a, b, log: run_pong(a, b, log, config), PONG_DIR, page="pong.html")
+    await run_server(arena, args)
     return 0
 
 
 def replay_cmd(args: argparse.Namespace) -> int:
     events = load_events(Path(args.log))
+    if events and events[0].get("game") == "pong":
+        check = verify_pong(events)
+        end = events[-1]
+        print(f"replay {'OK' if check.ok else 'MISMATCH'}: score={end.get('score')}")
+        for problem in check.problems:
+            print(f"  {problem}")
+        return 0 if check.ok else 1
     check = verify(events)
     print(check.game.to_text())
     if check.ok:
@@ -136,6 +189,18 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--no-browser", action="store_true")
     s.add_argument("--start-delay", type=float, default=2.0)
 
+    g = sub.add_parser("pong", help="coach pong: AI coaches set strategies, bots play in real time")
+    g.add_argument("--left", choices=PONG_COACHES, default="random")
+    g.add_argument("--right", choices=PONG_COACHES, default="fixed")
+    g.add_argument("--points", type=int, default=PongConfig.points_to_win)
+    g.add_argument("--timeout", type=float, default=PongConfig.timeout_seconds, help="strategy timeout (seconds)")
+    g.add_argument("--seed", type=int, default=None)
+    g.add_argument("--dummy-delay", type=float, default=0.0, help="thinking time for dummy coaches (seconds)")
+    g.add_argument("--fast", action="store_true", help="simulate without real-time pacing or browser")
+    g.add_argument("--port", type=int, default=8000)
+    g.add_argument("--no-browser", action="store_true")
+    g.add_argument("--start-delay", type=float, default=2.0)
+
     r = sub.add_parser("replay", help="verify a match log by replaying it")
     r.add_argument("log")
 
@@ -145,6 +210,8 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(play(args))
         if args.command == "serve":
             return asyncio.run(serve(args))
+        if args.command == "pong":
+            return asyncio.run(pong(args))
     except BillingGuardError as exc:
         print(f"[billing] {exc}", file=sys.stderr)
         return 2

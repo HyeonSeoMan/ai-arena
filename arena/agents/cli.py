@@ -14,6 +14,8 @@ import signal
 import tempfile
 from pathlib import Path
 
+from dataclasses import dataclass, field
+
 from arena.agents.base import AgentReply, Observation, parse_move
 from arena.agents.billing import safe_env
 from arena.agents.prompt import build_prompt
@@ -24,6 +26,14 @@ MOVE_SCHEMA = {
     "required": ["row", "col"],
     "additionalProperties": False,
 }
+
+
+@dataclass(frozen=True)
+class Completion:
+    text: str  # the model's final answer ("" on failure)
+    raw: str  # what to show/log: the answer, or CLI output on failure
+    error: str | None = None
+    meta: dict = field(default_factory=dict)
 
 
 async def run_cli(cmd: list[str], stdin: str, cwd: str) -> tuple[int, str, str]:
@@ -69,18 +79,20 @@ class ClaudeCodeAgent:
             cmd += ["--model", self.model]
         return cmd
 
-    async def act(self, obs: Observation) -> AgentReply:
+    async def complete(self, prompt: str, schema: dict | None = None) -> Completion:
         with tempfile.TemporaryDirectory(prefix="arena-claude-") as cwd:
-            code, out, err = await run_cli(self.command(), build_prompt(obs), cwd)
+            code, out, err = await run_cli(self.command(), prompt, cwd)
         try:
             data = json.loads(out)
         except json.JSONDecodeError:
-            return AgentReply(raw=out or err, error=f"claude exited {code} without JSON output")
+            return Completion("", out or err, f"claude exited {code} without JSON output")
         text = str(data.get("result", ""))
         if data.get("is_error") or code != 0:
-            return AgentReply(raw=text or out, error=f"claude reported an error (exit {code})")
-        reply = parse_move(text)
-        return AgentReply(reply.raw, reply.row, reply.col, reply.error, {"duration_ms": data.get("duration_ms")})
+            return Completion("", text or out, f"claude reported an error (exit {code})")
+        return Completion(text, text, meta={"duration_ms": data.get("duration_ms")})
+
+    async def act(self, obs: Observation) -> AgentReply:
+        return _move_reply(await self.complete(build_prompt(obs), MOVE_SCHEMA))
 
 
 class CodexAgent:
@@ -89,7 +101,7 @@ class CodexAgent:
         self.binary = binary
         self.model = model
 
-    def command(self, cwd: str) -> list[str]:
+    def command(self, cwd: str, with_schema: bool = True) -> list[str]:
         cmd = [
             self.binary,
             "exec",
@@ -99,20 +111,32 @@ class CodexAgent:
             "--ignore-user-config",  # config.toml can't switch provider; auth still comes from CODEX_HOME
             "--ignore-rules",
             "--color", "never",
-            "--output-schema", str(Path(cwd) / "schema.json"),
             "-o", str(Path(cwd) / "answer.txt"),
             "-C", cwd,
         ]
+        if with_schema:
+            cmd += ["--output-schema", str(Path(cwd) / "schema.json")]
         if self.model:
             cmd += ["--model", self.model]
         return cmd + ["-"]
 
-    async def act(self, obs: Observation) -> AgentReply:
+    async def complete(self, prompt: str, schema: dict | None = None) -> Completion:
         with tempfile.TemporaryDirectory(prefix="arena-codex-") as cwd:
-            (Path(cwd) / "schema.json").write_text(json.dumps(MOVE_SCHEMA))
-            code, out, err = await run_cli(self.command(cwd), build_prompt(obs), cwd)
+            if schema is not None:
+                (Path(cwd) / "schema.json").write_text(json.dumps(schema))
+            code, out, err = await run_cli(self.command(cwd, schema is not None), prompt, cwd)
             answer = Path(cwd) / "answer.txt"
             text = answer.read_text() if answer.exists() else ""
         if not text:
-            return AgentReply(raw=(err or out)[-2000:], error=f"codex exited {code} without a final message")
-        return parse_move(text)
+            return Completion("", (err or out)[-2000:], f"codex exited {code} without a final message")
+        return Completion(text, text)
+
+    async def act(self, obs: Observation) -> AgentReply:
+        return _move_reply(await self.complete(build_prompt(obs), MOVE_SCHEMA))
+
+
+def _move_reply(c: Completion) -> AgentReply:
+    if c.error:
+        return AgentReply(raw=c.raw, error=c.error)
+    reply = parse_move(c.text)
+    return AgentReply(reply.raw, reply.row, reply.col, reply.error, c.meta)

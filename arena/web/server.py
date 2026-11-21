@@ -9,27 +9,31 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
-from arena.agents.base import Agent
 from arena.events.log import Event, EventLog, load_events, new_match_id
-from arena.runner import MatchConfig, run_match
 
 HOST = "127.0.0.1"
 STATIC = Path(__file__).parent / "static"
 _MATCH_ID = re.compile(r"^[\w-]+$")
 
 
-class Arena:
-    """Owns the two agents and runs one match at a time, alternating colours on rematch."""
+# run(first_side_player, second_side_player, log) plays one match.
+MatchRunner = Callable[[object, object, EventLog], Awaitable[object]]
 
-    def __init__(self, first: Agent, second: Agent, config: MatchConfig, matches_dir: Path):
+
+class Arena:
+    """Owns the two players and runs one match at a time, swapping sides on rematch."""
+
+    def __init__(self, first, second, run: MatchRunner, matches_dir: Path, page: str = "index.html"):
         self.agents = (first, second)
-        self.config = config
+        self.run = run
         self.matches_dir = matches_dir
+        self.page = page
         self.games_started = 0
         self.log: EventLog | None = None
         self.task: asyncio.Task | None = None
@@ -43,17 +47,17 @@ class Arena:
         if self.running:
             raise RuntimeError("a match is already running")
         first, second = self.agents
-        black, white = (first, second) if self.games_started % 2 == 0 else (second, first)
+        a, b = (first, second) if self.games_started % 2 == 0 else (second, first)
         self.games_started += 1
         match_id = new_match_id()
         self.log = EventLog(match_id, self.matches_dir / f"{match_id}.jsonl")
         self.log.subscribe(self._broadcast)
-        self.task = asyncio.create_task(self._run(black, white, self.log))
+        self.task = asyncio.create_task(self._run(a, b, self.log))
         return match_id
 
-    async def _run(self, black: Agent, white: Agent, log: EventLog) -> None:
+    async def _run(self, a, b, log: EventLog) -> None:
         try:
-            await run_match(black, white, log, self.config)
+            await self.run(a, b, log)
         finally:
             log.close()
 
@@ -68,9 +72,11 @@ def _summary(path: Path) -> dict:
     end = next((e for e in reversed(events) if e["type"] == "match_ended"), None)
     return {
         "match_id": path.stem,
-        "black": start.get("black"),
-        "white": start.get("white"),
+        "game": start.get("game", "gomoku"),
+        "black": start.get("black", start.get("left")),
+        "white": start.get("white", start.get("right")),
         "winner": end and end["winner"],
+        "score": end and end.get("score"),
         "reason": end and end["reason"],
         "finished": end is not None,
     }
@@ -81,7 +87,7 @@ def create_app(arena: Arena) -> FastAPI:
 
     @app.get("/")
     async def index() -> FileResponse:
-        return FileResponse(STATIC / "index.html")
+        return FileResponse(STATIC / arena.page)
 
     @app.get("/api/state")
     async def state() -> dict:

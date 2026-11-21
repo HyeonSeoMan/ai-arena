@@ -4,12 +4,12 @@ from fastapi.testclient import TestClient
 
 from arena.agents import HeuristicAgent, RandomAgent
 from arena.events import verify
-from arena.runner import MatchConfig
+from arena.runner import run_match
 from arena.web.server import Arena, create_app
 
 
 def make_client(tmp_path, delay=0.0):
-    arena = Arena(HeuristicAgent("h", seed=1, delay=delay), RandomAgent("r", seed=1), MatchConfig(), tmp_path)
+    arena = Arena(HeuristicAgent("h", seed=1, delay=delay), RandomAgent("r", seed=1), run_match, tmp_path)
     return arena, TestClient(create_app(arena))
 
 

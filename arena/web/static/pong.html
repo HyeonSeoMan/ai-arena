@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coach Pong</title>
+<style>
+  :root {
+    --bg: #f3f2ee; --panel: #ffffff; --ink: #1c1c1f; --muted: #6c6c73; --line: #e2dfd6;
+    --court: #14324a; --court-line: #3f6a8c; --ball: #ffe066;
+    --left: #e4572e; --right: #2fa3d9; --good: #2c8a4b; --bad: #c8412b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #131417; --panel: #1f2024; --ink: #ececef; --muted: #9a9aa2; --line: #33353b;
+            --court: #0d2233; --court-line: #2c4f6b; --good: #5fcf86; --bad: #ff7a63; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; }
+  header .spacer { flex: 1; }
+  button { font: inherit; color: #fff; background: var(--right); border: 0; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  .conn { font-size: 12px; color: var(--muted); }
+  .conn.on::before { content: "● "; color: var(--good); } .conn.off::before { content: "● "; color: var(--bad); }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  .scoreboard { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
+  .team { display: flex; flex-direction: column; gap: 6px; }
+  .team.r { align-items: flex-end; text-align: right; }
+  .team .name { font-weight: 700; font-size: 18px; }
+  .team.l .name { color: var(--left); } .team.r .name { color: var(--right); }
+  .bar { width: min(260px, 100%); height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 100%; transition: width .2s; }
+  .team.l .bar > i { background: var(--left); } .team.r .bar > i { background: var(--right); margin-left: auto; }
+  .team .sub { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .score { font-size: 44px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+  .court-wrap { position: relative; }
+  canvas { width: 100%; aspect-ratio: 16 / 9; display: block; border-radius: 12px; background: var(--court); }
+  .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  .overlay .box { background: rgba(0,0,0,.62); color: #fff; padding: 14px 20px; border-radius: 12px; text-align: center; min-width: 240px; }
+  .overlay .box b { font-size: 18px; display: block; margin-bottom: 6px; }
+  .overlay .row { display: flex; justify-content: space-between; gap: 18px; font-size: 13px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } .score { font-size: 32px; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  .card h2 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
+  .strat .note { font-size: 15px; margin-bottom: 8px; min-height: 1.4em; }
+  .strat .aim { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .knob { display: grid; grid-template-columns: 92px 1fr 34px; align-items: center; gap: 8px; font-size: 12px; margin: 3px 0; }
+  .knob .track { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  .knob .track i { display: block; height: 100%; }
+  .strat.l .track i { background: var(--left); } .strat.r .track i { background: var(--right); }
+  .knob span:last-child { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  #feed { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
+  #feed li { border-top: 1px solid var(--line); padding: 7px 2px; }
+  #feed li:first-child { border-top: 0; }
+  #feed .meta { color: var(--muted); font-size: 12px; }
+  #feed .bad { color: var(--bad); }
+  #feed details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  #feed pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); padding: 8px; border-radius: 6px; margin: 6px 0 0; font-size: 12px; }
+  .tl { color: var(--left); font-weight: 600; } .tr { color: var(--right); font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AI Arena · Coach Pong</h1>
+  <span id="conn" class="conn off">연결 중</span>
+  <span class="spacer"></span>
+  <button id="rematch" disabled>재대결 (좌우 교대)</button>
+</header>
+<main>
+  <section class="scoreboard">
+    <div class="team l"><div class="name" id="nameL">-</div><div class="bar"><i id="stamL"></i></div><div class="sub" id="subL">체력</div></div>
+    <div class="score" id="score">0 : 0</div>
+    <div class="team r"><div class="name" id="nameR">-</div><div class="bar"><i id="stamR"></i></div><div class="sub" id="subR">체력</div></div>
+  </section>
+  <section class="court-wrap">
+    <canvas id="court" width="1280" height="720" aria-label="탁구 경기장"></canvas>
+    <div class="overlay" id="overlay" hidden><div class="box" id="overlayBox"></div></div>
+  </section>
+  <section class="grid2">
+    <div class="card strat l" id="stratL"><h2>왼쪽 작전</h2></div>
+    <div class="card strat r" id="stratR"><h2>오른쪽 작전</h2></div>
+  </section>
+  <section class="card"><h2>경기 기록</h2><ul id="feed"></ul></section>
+</main>
+<script>
+const KNOBS = [["angle", "각도"], ["power", "강타"], ["effort", "이동 속도"], ["anticipation", "예측"], ["home", "중앙 복귀"]];
+const AIM = {away: "상대 반대편", corners: "모서리", center: "중앙", random: "섞어서"};
+const PHASE = {pregame: "사전 작전 회의", timeout: "작전 타임"};
+const SIDE = ["왼쪽", "오른쪽"], CLS = ["tl", "tr"];
+
+let S = null;
+function reset() {
+  S = { names: ["-", "-"], field: {width: 160, height: 90, paddle_half: 7, paddle_x: [3, 157], ball_r: 1.5},
+        score: [0, 0], strategies: [null, null], frame: null, timeout: null, ended: null, feed: [], trail: [] };
+}
+reset();
+
+function esc(t) { return String(t ?? "").replace(/[&<>"]/g, ch => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[ch])); }
+function who(side) { return `<span class="${CLS[side]}">${esc(S.names[side])}</span>`; }
+
+function apply(e) {
+  switch (e.type) {
+    case "match_started": reset(); S.names = [e.left, e.right]; S.field = e.field; break;
+    case "frame":
+      S.frame = e;
+      S.trail.push(e.ball); if (S.trail.length > 8) S.trail.shift();
+      return; // frames only redraw the court
+    case "timeout_started":
+      S.timeout = {phase: e.phase, until: Date.now() + e.seconds * 1000, status: ["생각 중…", "생각 중…"]};
+      S.feed.push(e); S.trail = []; break;
+    case "strategy_set":
+      S.strategies[e.side] = e.strategy;
+      if (S.timeout) S.timeout.status[e.side] = `작전 변경 (${(e.elapsed_ms / 1000).toFixed(1)}초)`;
+      S.feed.push(e); break;
+    case "strategy_kept":
+      if (S.timeout) S.timeout.status[e.side] = "기존 작전 유지";
+      S.feed.push(e); break;
+    case "timeout_ended": S.timeout = null; break;
+    case "point_started": S.score = e.score; S.strategies = e.strategies; S.trail = []; break;
+    case "point_ended": S.score = e.score; S.feed.push(e); break;
+    case "match_ended": S.ended = e; S.score = e.score; S.feed.push(e); break;
+    default: return;
+  }
+  renderPanels();
+}
+
+const canvas = document.getElementById("court"), ctx = canvas.getContext("2d");
+function css(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+function drawCourt() {
+  const f = S.field, W = canvas.width, H = canvas.height, sx = W / f.width, sy = H / f.height;
+  ctx.fillStyle = css("--court"); ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = css("--court-line"); ctx.lineWidth = 4; ctx.setLineDash([18, 18]);
+  ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke(); ctx.setLineDash([]);
+  const fr = S.frame;
+  const paddles = fr ? fr.paddles : [f.height / 2, f.height / 2];
+  const colors = [css("--left"), css("--right")];
+  for (const side of [0, 1]) {
+    const x = f.paddle_x[side] * sx, y = paddles[side] * sy, h = f.paddle_half * 2 * sy, w = 14;
+    ctx.fillStyle = colors[side];
+    ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, 6); ctx.fill();
+  }
+  if (!fr) return;
+  S.trail.forEach(([bx, by], i) => {
+    ctx.fillStyle = `rgba(255, 224, 102, ${0.08 + i * 0.05})`;
+    ctx.beginPath(); ctx.arc(bx * sx, by * sy, f.ball_r * sx * 0.9, 0, 7); ctx.fill();
+  });
+  ctx.fillStyle = css("--ball");
+  ctx.beginPath(); ctx.arc(fr.ball[0] * sx, fr.ball[1] * sy, f.ball_r * sx * 1.15, 0, 7); ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,.55)"; ctx.font = "22px sans-serif"; ctx.textAlign = "center";
+  ctx.fillText(`공 속도 ${fr.speed}`, W / 2, H - 18);
+}
+
+function knobs(s, side) {
+  if (!s) return `<div class="note">작전 대기 중</div>`;
+  return `<div class="note">${esc(s.note || "(메모 없음)")}</div><div class="aim">공략: ${AIM[s.aim] ?? esc(s.aim)}</div>` +
+    KNOBS.map(([k, label]) => `<div class="knob"><span>${label}</span><div class="track"><i style="width:${Math.round(s[k] * 100)}%"></i></div><span>${s[k].toFixed(2)}</span></div>`).join("");
+}
+
+function feedItem(e) {
+  switch (e.type) {
+    case "timeout_started": return `<div class="meta">— ${PHASE[e.phase] ?? e.phase} (최대 ${e.seconds}초) —</div>`;
+    case "strategy_set": {
+      const raw = e.raw ? `<details><summary>응답 원문</summary><pre>${esc(e.raw)}</pre></details>` : "";
+      return `<div>${who(e.side)} 작전 변경: “${esc(e.strategy.note)}”</div><div class="meta">${(e.elapsed_ms / 1000).toFixed(1)}초</div>${raw}`;
+    }
+    case "strategy_kept": {
+      const raw = e.raw ? `<details><summary>응답 원문</summary><pre>${esc(e.raw)}</pre></details>` : "";
+      return `<div class="bad">${who(e.side)} 기존 작전 유지: ${esc(e.reason)}</div>${raw}`;
+    }
+    case "point_ended": {
+      if (e.winner === null) return `<div class="meta">${e.point + 1}번째 포인트 무효 (랠리 한도)</div>`;
+      const miss = e.miss_distance != null ? ` · 놓친 거리 ${e.miss_distance}` : "";
+      return `<div>${who(e.winner)} 득점 → ${e.score[0]} : ${e.score[1]}</div><div class="meta">${e.hits}타 · ${(e.ticks / 60).toFixed(1)}초${miss}</div>`;
+    }
+    case "match_ended": return `<div><b>${who(e.winner)} 승리! ${e.score[0]} : ${e.score[1]}</b></div>`;
+  }
+  return "";
+}
+
+function renderPanels() {
+  document.getElementById("nameL").textContent = S.names[0];
+  document.getElementById("nameR").textContent = S.names[1];
+  document.getElementById("score").textContent = `${S.score[0]} : ${S.score[1]}`;
+  document.getElementById("stratL").innerHTML = `<h2>왼쪽 작전 · ${esc(S.names[0])}</h2>` + knobs(S.strategies[0], 0);
+  document.getElementById("stratR").innerHTML = `<h2>오른쪽 작전 · ${esc(S.names[1])}</h2>` + knobs(S.strategies[1], 1);
+  const feed = document.getElementById("feed");
+  feed.innerHTML = S.feed.slice().reverse().map(e => `<li>${feedItem(e)}</li>`).join("");
+  rematch.disabled = !S.ended;
+}
+
+function renderOverlay() {
+  const ov = document.getElementById("overlay"), box = document.getElementById("overlayBox");
+  if (S.ended) {
+    ov.hidden = false;
+    box.innerHTML = `<b>${esc(S.names[S.ended.winner])} 승리</b>${S.ended.score[0]} : ${S.ended.score[1]}`;
+  } else if (S.timeout) {
+    ov.hidden = false;
+    const left = Math.max(0, (S.timeout.until - Date.now()) / 1000).toFixed(0);
+    box.innerHTML = `<b>${PHASE[S.timeout.phase] ?? ""} · ${left}초</b>` +
+      `<div class="row"><span class="tl">${esc(S.names[0])}</span><span>${esc(S.timeout.status[0])}</span></div>` +
+      `<div class="row"><span class="tr">${esc(S.names[1])}</span><span>${esc(S.timeout.status[1])}</span></div>`;
+  } else ov.hidden = true;
+}
+
+function renderStamina() {
+  const st = S.frame ? S.frame.stamina : [100, 100];
+  for (const [i, k] of [[0, "L"], [1, "R"]]) {
+    document.getElementById(`stam${k}`).style.width = `${st[i]}%`;
+    document.getElementById(`sub${k}`).textContent = `체력 ${Math.round(st[i])}`;
+  }
+}
+
+function loop() { drawCourt(); renderOverlay(); renderStamina(); requestAnimationFrame(loop); }
+
+const rematch = document.getElementById("rematch");
+rematch.onclick = async () => { rematch.disabled = true; await fetch("/api/matches", {method: "POST"}); };
+
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws`), conn = document.getElementById("conn");
+  ws.onopen = () => { conn.className = "conn on"; conn.textContent = "연결됨"; reset(); renderPanels(); };
+  ws.onclose = () => { conn.className = "conn off"; conn.textContent = "연결 끊김 · 재연결 중"; setTimeout(connect, 1500); };
+  ws.onmessage = m => apply(JSON.parse(m.data));
+}
+
+renderPanels();
+loop();
+connect();
+</script>
+</body>
+</html>

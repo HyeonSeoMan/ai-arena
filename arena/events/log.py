@@ -51,6 +51,12 @@ class EventLog:
             listener(event)
         return event
 
+    def broadcast(self, type_: str, **data: Any) -> None:
+        """Send a transient event (e.g. an animation frame) to live listeners only; not logged."""
+        event = {"match_id": self.match_id, "type": type_, "audience": "public", **data}
+        for listener in self._listeners:
+            listener(event)
+
     def close(self) -> None:
         if self._file is not None:
             self._file.close()
