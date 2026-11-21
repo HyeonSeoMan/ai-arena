@@ -11,6 +11,7 @@ from arena.coaching import Coach, consult
 from arena.events.log import EventLog
 from arena.tanks import rules as R
 from arena.tanks.coach import Briefing
+from arena.tanks.director import Director
 from arena.tanks.strategy import Strategy
 from arena.tanks.world import Tank, World, new_segment
 
@@ -25,6 +26,7 @@ class TanksConfig:
     match_seconds: float = R.MATCH_SECONDS
     kills_to_win: int = R.KILLS_TO_WIN
     start_pause: float = 1.0
+    yield_every: int = 300  # fast mode: let other tasks (director, server) run every N ticks
 
 
 def _last_seen(world: World, me: Tank, opp: Tank) -> dict | None:
@@ -42,6 +44,8 @@ def _last_seen(world: World, me: Tank, opp: Tank) -> dict | None:
 
 
 def _trigger_text(phase: str, side: int, detail: dict) -> str:
+    if phase == "director":
+        return "live instruction from your director (the match is still running)"
     if phase == "pregame":
         return "match start: choose your opening build and plan"
     if phase == "quiet":
@@ -64,7 +68,8 @@ def _trigger_text(phase: str, side: int, detail: dict) -> str:
     return "; ".join(parts)
 
 
-def _briefing(world: World, side: int, phase: str, detail: dict, strategies: list, config: TanksConfig) -> Briefing:
+def _briefing(world: World, side: int, phase: str, detail: dict, strategies: list, config: TanksConfig,
+              owner_notes: str | None = None) -> Briefing:
     me, opp = world.tanks[side], world.tanks[1 - side]
     you = world.public_status(me)
     you["next_level_xp"] = R.xp_for_level(min(me.level + 1, R.MAX_LEVEL))
@@ -83,6 +88,7 @@ def _briefing(world: World, side: int, phase: str, detail: dict, strategies: lis
         since_last={k: (round(v, 1) if isinstance(v, float) else v) for k, v in me.segment.items()},
         last_seen_opponent=_last_seen(world, me, opp),
         choose_class_now=phase == "level15" and detail["tank"] == side and me.cls == "basic",
+        owner_notes=owner_notes,
     )
 
 
@@ -104,6 +110,7 @@ async def run_tanks(
     config: TanksConfig | None = None,
     seed: str | None = None,
     clock: Callable[[], float] = time.monotonic,
+    director: Director | None = None,
 ) -> tuple[int, str]:
     config = config or TanksConfig()
     seed = seed or log.match_id
@@ -120,7 +127,7 @@ async def run_tanks(
     async def timeout(phase: str, detail: dict) -> None:
         nonlocal used, last_consult
         used += 1
-        briefings = [_briefing(world, side, phase, detail, strategies, config) for side in (0, 1)]
+        briefings = [_briefing(world, side, phase, detail, strategies, config, notes(side)) for side in (0, 1)]
         await consult(coaches, briefings, strategies, log, config.timeout_seconds, phase, clock,
                       trigger=briefings[0].trigger, match_time=round(world.seconds, 1), number=used)
         for side in (0, 1):
@@ -128,7 +135,22 @@ async def run_tanks(
             world.tanks[side].segment = new_segment()
         last_consult = world.tick
         log.emit("strategy_applied", tick=world.tick, strategies=[s.to_dict() for s in strategies],
-                 hash=world.state_hash())
+                 hash=world.state_hash(), source="timeout")
+
+    def notes(side: int) -> str | None:
+        return director.notes() if director is not None and director.side == side else None
+
+    def apply_director() -> None:
+        side = director.side
+        for cmd, strategy, revert in director.drain(world.tick, strategies[side]):
+            strategies[side] = strategy
+            world.set_strategy(side, strategy)
+            log.emit("strategy_applied", tick=world.tick, strategies=[s.to_dict() for s in strategies],
+                     hash=world.state_hash(), source="director", side=side, command_id=cmd.id, revert=revert)
+
+    if director is not None:
+        director.bind(log, lambda: world.tick,
+                      lambda: _briefing(world, director.side, "director", {}, strategies, config, director.notes()))
 
     await timeout("pregame", {})
     if config.realtime:
@@ -138,6 +160,8 @@ async def run_tanks(
     next_tick = clock()
     result = None
     while result is None:
+        if director is not None:
+            apply_director()
         events = world.step()
         detail = None
         for e in events:
@@ -174,9 +198,11 @@ async def run_tanks(
             delay = next_tick - clock()
             if delay > 0:
                 await asyncio.sleep(delay)
-        elif world.tick % 300 == 0:
+        elif world.tick % config.yield_every == 0:
             await asyncio.sleep(0)
 
+    if director is not None:
+        director.finish()
     winner, reason = result
     log.emit("match_ended", winner=winner, reason=reason, tick=world.tick, hash=world.state_hash(),
              kills=[world.tanks[0].kills, world.tanks[1].kills],
