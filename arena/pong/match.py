@@ -7,9 +7,10 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 
-from arena.events.log import EventLog, truncate
+from arena.coaching import Coach, consult
+from arena.events.log import EventLog
 from arena.pong import physics
-from arena.pong.coach import Briefing, Coach, CoachReply
+from arena.pong.coach import Briefing
 from arena.pong.physics import DT, HEIGHT, Paddle, PointResult, PointSim, between_points
 from arena.pong.strategy import Strategy
 
@@ -99,7 +100,6 @@ async def run_pong(
     )
 
     async def strategy_phase(phase: str) -> None:
-        log.emit("timeout_started", phase=phase, seconds=config.timeout_seconds, score=score[:])
         briefings = [
             Briefing(
                 side=side,
@@ -113,28 +113,7 @@ async def run_pong(
             )
             for side in (0, 1)
         ]
-
-        async def ask(side: int) -> None:
-            t0 = clock()
-            try:
-                reply = await asyncio.wait_for(coaches[side].plan(briefings[side]), config.timeout_seconds)
-            except TimeoutError:
-                log.emit("strategy_kept", side=side, reason=f"no answer within {config.timeout_seconds:g}s",
-                         elapsed_ms=round((clock() - t0) * 1000), raw="")
-                return
-            except Exception as exc:  # a crashing coach keeps its previous strategy
-                reply = CoachReply(raw="", error=f"coach error: {type(exc).__name__}: {exc}")
-            elapsed_ms = round((clock() - t0) * 1000)
-            if reply.strategy is None:
-                log.emit("strategy_kept", side=side, reason=reply.error or "no strategy",
-                         elapsed_ms=elapsed_ms, raw=truncate(reply.raw))
-                return
-            strategies[side] = reply.strategy
-            log.emit("strategy_set", side=side, strategy=reply.strategy.to_dict(),
-                     elapsed_ms=elapsed_ms, raw=truncate(reply.raw))
-
-        await asyncio.gather(ask(0), ask(1))
-        log.emit("timeout_ended", phase=phase)
+        await consult(coaches, briefings, strategies, log, config.timeout_seconds, phase, clock, score=score[:])
 
     await strategy_phase("pregame")
 

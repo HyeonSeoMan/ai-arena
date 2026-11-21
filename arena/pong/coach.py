@@ -6,10 +6,13 @@ import asyncio
 import json
 import random
 from collections.abc import Iterable
-from dataclasses import dataclass, field
-from typing import Protocol
+from dataclasses import dataclass
 
-from arena.pong.strategy import AIMS, STRATEGY_SCHEMA, Strategy, StrategyError, parse_strategy
+from arena import coaching
+from arena.coaching import Coach, CoachReply, reply_from_text
+from arena.pong.strategy import AIMS, STRATEGY_SCHEMA, Strategy, parse_strategy
+
+__all__ = ["Briefing", "Coach", "CoachReply", "FixedCoach", "LLMCoach", "RandomCoach", "ScriptedCoach"]
 
 
 @dataclass(frozen=True)
@@ -25,32 +28,9 @@ class Briefing:
     owner_notes: str | None = None  # reserved for owner -> own coach channel
 
 
-@dataclass(frozen=True)
-class CoachReply:
-    raw: str
-    strategy: Strategy | None = None
-    error: str | None = None
-    meta: dict = field(default_factory=dict)
-
-
-class Coach(Protocol):
-    name: str
-
-    async def plan(self, briefing: Briefing) -> CoachReply: ...
-
-
 def parse_reply(text: str) -> CoachReply:
     """Read a strategy from the model's answer, tolerating surrounding prose or code fences."""
-    start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end <= start:
-        return CoachReply(raw=text, error="no JSON object found")
-    try:
-        data = json.loads(text[start : end + 1])
-        return CoachReply(raw=text, strategy=parse_strategy(data))
-    except json.JSONDecodeError as exc:
-        return CoachReply(raw=text, error=f"invalid JSON: {exc.msg}")
-    except StrategyError as exc:
-        return CoachReply(raw=text, error=str(exc))
+    return reply_from_text(text, parse_strategy)
 
 
 GUIDE = """You are the coach of a paddle bot in a real-time 2D Pong match against another AI's bot.
@@ -100,19 +80,9 @@ def build_coach_prompt(b: Briefing) -> str:
     return "\n\n".join(parts)
 
 
-class LLMCoach:
-    """Wraps a CLI agent (ClaudeCodeAgent / CodexAgent) that exposes `complete(prompt, schema)`."""
-
-    def __init__(self, agent, name: str | None = None):
-        self.agent = agent
-        self.name = name or agent.name
-
-    async def plan(self, briefing: Briefing) -> CoachReply:
-        completion = await self.agent.complete(build_coach_prompt(briefing), STRATEGY_SCHEMA)
-        if completion.error:
-            return CoachReply(raw=completion.raw, error=completion.error)
-        reply = parse_reply(completion.text)
-        return CoachReply(reply.raw, reply.strategy, reply.error, completion.meta)
+def LLMCoach(agent, name: str | None = None) -> coaching.LLMCoach:
+    """Pong coach backed by a CLI agent (ClaudeCodeAgent / CodexAgent)."""
+    return coaching.LLMCoach(agent, build_coach_prompt, parse_strategy, STRATEGY_SCHEMA, name)
 
 
 class FixedCoach:
