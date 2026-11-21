@@ -122,7 +122,8 @@ async def run_tanks(
     level15_seen: set[int] = set()
 
     log.emit("match_started", game="tanks", left=first.name, right=second.name, seed=seed, config=asdict(config),
-             map_size=R.MAP_SIZE, npcs=[t.name for t in world.tanks[2:]])
+             map_size=R.MAP_SIZE, npcs=[t.name for t in world.tanks[2:]],
+             director_side=director.side if director is not None else None)
 
     async def timeout(phase: str, detail: dict) -> None:
         nonlocal used, last_consult

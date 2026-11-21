@@ -29,8 +29,11 @@ MatchRunner = Callable[[object, object, EventLog], Awaitable[object]]
 class Arena:
     """Owns the two players and runs one match at a time, swapping sides on rematch."""
 
-    def __init__(self, first, second, run: MatchRunner, matches_dir: Path, page: str = "index.html"):
+    def __init__(self, first, second, run: MatchRunner, matches_dir: Path, page: str = "index.html",
+                 hooks: dict[str, Callable] | None = None):
         self.agents = (first, second)
+        # Optional game-specific endpoints: director_info(), command(text), review_state(), review_chat(text).
+        self.hooks = hooks or {}
         self.run = run
         self.matches_dir = matches_dir
         self.page = page
@@ -110,6 +113,27 @@ def create_app(arena: Arena) -> FastAPI:
         if arena.running:
             raise HTTPException(409, "a match is already running")
         return {"match_id": arena.start_match()}
+
+    def hook(name: str) -> Callable:
+        if name not in arena.hooks:
+            raise HTTPException(404, f"{name} is not available for this game")
+        return arena.hooks[name]
+
+    @app.get("/api/director")
+    async def director_info() -> dict:
+        return hook("director_info")()
+
+    @app.post("/api/command")
+    async def command(body: dict) -> dict:
+        return hook("command")(str(body.get("text", "")))
+
+    @app.get("/api/review")
+    async def review_state() -> dict:
+        return hook("review_state")()
+
+    @app.post("/api/review")
+    async def review_chat(body: dict) -> dict:
+        return await hook("review_chat")(str(body.get("message", "")))
 
     @app.websocket("/ws")
     async def live(ws: WebSocket) -> None:

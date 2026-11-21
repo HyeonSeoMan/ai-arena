@@ -64,6 +64,23 @@
   #feed li:first-child { border-top: 0; }
   #feed details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
   #feed pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); padding: 8px; border-radius: 6px; margin: 6px 0 0; font-size: 11px; }
+  .director .qbtns { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  .director .qbtns button { background: var(--bg); color: var(--ink); border: 1px solid var(--line); padding: 5px 10px; font-size: 13px; }
+  .director .qbtns button:hover:not(:disabled) { border-color: var(--a); }
+  form.say { display: flex; gap: 6px; }
+  form.say input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+  #dlist, #rmsgs { list-style: none; margin: 8px 0 0; padding: 0; max-height: 260px; overflow-y: auto; font-size: 13px; }
+  #dlist li { border-top: 1px solid var(--line); padding: 6px 2px; }
+  .tag { font-size: 11px; border-radius: 6px; padding: 1px 6px; background: var(--bg); color: var(--muted); margin-left: 4px; }
+  .tag.ok { color: var(--good); } .tag.fail { color: var(--bad); } .tag.wait { color: #c99a1e; }
+  .opinion { margin-top: 3px; padding: 4px 8px; border-left: 3px solid #e5c13a; background: var(--bg); border-radius: 4px; font-size: 12px; }
+  .derr { color: var(--bad); font-size: 12px; min-height: 1em; }
+  .review { margin-top: 12px; }
+  .review .report { white-space: pre-wrap; font-size: 14px; line-height: 1.6; }
+  #rmsgs li { padding: 6px 8px; border-radius: 8px; margin-top: 6px; white-space: pre-wrap; }
+  #rmsgs li.director { background: var(--bg); margin-left: 15%; }
+  #rmsgs li.coach { border: 1px solid var(--line); margin-right: 15%; }
+  .badge { font-size: 11px; color: #fff; background: var(--a); border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }
   .ta { color: var(--a); font-weight: 600; } .tb { color: var(--b); font-weight: 600; } .bad { color: var(--bad); }
 </style>
 </head>
@@ -79,10 +96,24 @@
   <section class="arena">
     <canvas id="map" width="1200" height="1200" aria-label="경기장"></canvas>
     <div class="overlay" id="overlay" hidden><div class="box" id="overlayBox"></div></div>
+    <div class="card review" id="review" hidden>
+      <div class="meta" style="margin-bottom:6px">복기 · 코치와 대화</div>
+      <div class="report" id="rreport"></div>
+      <ul id="rmsgs"></ul>
+      <form class="say" id="rform" style="margin-top:8px"><input id="rinput" maxlength="1000" placeholder="코치에게 질문하거나 다음 경기 계획을 상의하세요"><button>보내기</button></form>
+      <div class="derr" id="rerr"></div>
+    </div>
   </section>
   <section class="side">
     <div class="card a" id="cardA"></div>
     <div class="card b" id="cardB"></div>
+    <div class="card director" id="director" hidden>
+      <div class="head"><span><b>감독</b> · <span id="dname"></span></span><span class="meta" id="dstatus"></span></div>
+      <div class="qbtns" id="qbtns"></div>
+      <form class="say" id="dform"><input id="dinput" maxlength="300" placeholder="자유롭게 지시하세요 (예: 상대 체력이 낮아, 끝까지 쫓아가)"><button>지시</button></form>
+      <div class="derr" id="derr"></div>
+      <ul id="dlist"></ul>
+    </div>
     <div class="card"><div class="meta" style="margin-bottom:6px">경기 기록</div><ul id="feed"></ul></div>
   </section>
 </main>
@@ -100,7 +131,8 @@ const SIDE_CLS = ["ta", "tb"];
 
 let S;
 function reset() { S = { names: ["-", "-"], frame: null, status: [null, null], strategies: [null, null], timeout: null,
-                         ended: null, feed: [], matchSeconds: 360 }; }
+                         ended: null, feed: [], matchSeconds: 360, directorSide: null, cmds: new Map(),
+                         review: {ready: false, busy: false, report: null, messages: []} }; }
 reset();
 
 function esc(t) { return String(t ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c])); }
@@ -109,7 +141,16 @@ function tankName(id) { return id === 0 || id === 1 ? who(id) : (S.frame?.tanks[
 
 function apply(e) {
   switch (e.type) {
-    case "match_started": reset(); S.names = [e.left, e.right]; S.matchSeconds = e.config.match_seconds; break;
+    case "match_started": reset(); S.names = [e.left, e.right]; S.matchSeconds = e.config.match_seconds;
+      S.directorSide = e.director_side ?? null; loadDirector(); break;
+    case "director_command": S.cmds.set(e.id, {...e, status: e.kind === "llm" ? "해석 중" : "적용 대기", since: Date.now()}); S.feed.push(e); break;
+    case "director_result": {
+      const c = S.cmds.get(e.id); if (!c) break;
+      Object.assign(c, {result: e, status: e.ok ? (c.applied ? "적용됨" : "적용 대기") : "실패"}); break;
+    }
+    case "review_started": S.review.busy = true; renderReview(); return;
+    case "review_report": Object.assign(S.review, {busy: false, ready: true, report: e.text}); renderReview(); return;
+    case "review_message": S.review.messages.push({role: e.role, text: e.text}); S.review.busy = e.role === "director"; renderReview(); return;
     case "frame": S.frame = e; if (e.status) S.status = e.status; return;
     case "timeout_started":
       S.timeout = {phase: e.phase, why: e.trigger, until: Date.now() + e.seconds * 1000, st: ["생각 중…", "생각 중…"]};
@@ -119,7 +160,13 @@ function apply(e) {
       if (S.timeout) S.timeout.st[e.side] = `작전 변경 (${(e.elapsed_ms / 1000).toFixed(1)}초)`;
       S.feed.push(e); break;
     case "strategy_kept": if (S.timeout) S.timeout.st[e.side] = "기존 작전 유지"; S.feed.push(e); break;
-    case "strategy_applied": S.strategies = e.strategies; break;
+    case "strategy_applied":
+      S.strategies = e.strategies;
+      if (e.source === "director" && S.cmds.has(e.command_id)) {
+        const c = S.cmds.get(e.command_id);
+        if (e.revert) c.reverted = e.tick; else { c.applied = e.tick; c.status = "적용됨"; }
+      }
+      break;
     case "timeout_ended": S.timeout = null; break;
     case "kill": case "class_changed": S.feed.push(e); break;
     case "match_ended": S.ended = e; S.feed.push(e); break;
@@ -204,7 +251,8 @@ function card(i) {
       <div class="tags"><span>클래스: ${CLASS_KO[plan.class_choice]}</span><span>${FARM_KO[plan.farm_target]}</span><span>${NPC_KO[plan.npc_policy]}</span></div>
       <div class="knobs">${knobs}</div><div class="meta" style="margin-top:6px">다음 스탯: ${esc(upcoming || "-")}</div>`;
   }
-  return `<div class="head"><span class="name">${esc(S.names[i])}</span><span class="kd">${st.kills}킬 / ${st.deaths}데스</span></div>
+  const badge = S.directorSide === i ? `<span class="badge">감독 중</span>` : "";
+  return `<div class="head"><span class="name">${esc(S.names[i])}${badge}</span><span class="kd">${st.kills}킬 / ${st.deaths}데스</span></div>
     <div class="meta">Lv ${st.level} · ${CLASS_KO[st.cls]} · 점수 ${st.score.toLocaleString()} ${st.alive ? "" : "· 부활 대기"}</div>
     <div class="bar hp"><i style="width:${st.alive ? Math.round(st.hp / st.max_hp * 100) : 0}%"></i></div>
     <div class="bar xp"><i style="width:${Math.round(st.xp_progress * 100)}%"></i></div>
@@ -233,6 +281,7 @@ function feedItem(e) {
       return `<div>${by} ▸ ${tankName(e.victim)} 처치</div><div class="meta">${fmt(e.tick / 30)} · 킬 ${e.kills[0]} : ${e.kills[1]}</div>`;
     }
     case "class_changed": return `<div>${tankName(e.tank)} → ${CLASS_KO[e.cls]} 전직</div>`;
+    case "director_command": return `<div>📣 감독 → ${who(e.side)}: “${esc(e.text)}”</div><div class="meta">${fmt(e.tick / 30)} · ${e.kind === "llm" ? "AI 해석" : "즉시 명령"}</div>`;
     case "match_ended": {
       const why = e.reason === "kills" ? `${e.kills[e.winner]}킬 달성` : `점수 ${e.scores[0].toLocaleString()} : ${e.scores[1].toLocaleString()}`;
       return `<div><b>${who(e.winner)} 승리 · ${why}</b></div>`;
@@ -266,8 +315,87 @@ let lastSide = 0;
 function loop(ts) {
   draw(); renderOverlay();
   if (S.frame) document.getElementById("clock").textContent = `${fmt(S.frame.t / 30)} / ${fmt(S.matchSeconds)}`;
-  if (ts - lastSide > 250) { lastSide = ts; document.getElementById("cardA").innerHTML = card(0); document.getElementById("cardB").innerHTML = card(1); }
+  if (ts - lastSide > 250) { lastSide = ts; document.getElementById("cardA").innerHTML = card(0); document.getElementById("cardB").innerHTML = card(1); renderDirector(); }
   requestAnimationFrame(loop);
+}
+
+// ---------------- director ----------------
+let DIR = null;
+async function loadDirector() {
+  const res = await fetch("/api/director");
+  if (!res.ok) return;  // this game has no director
+  DIR = await res.json();
+  document.getElementById("director").hidden = false;
+  document.getElementById("dname").textContent = DIR.name;
+  document.getElementById("qbtns").innerHTML = DIR.buttons.map(b => `<button type="button" data-text="${esc(b.label)}">${esc(b.label)}</button>`).join("");
+  document.getElementById("dinput").disabled = !DIR.llm;
+  if (!DIR.llm) document.getElementById("dinput").placeholder = "이 코치는 LLM이 없어 즉시 명령만 가능합니다";
+}
+
+async function sendCommand(text) {
+  const err = document.getElementById("derr"); err.textContent = "";
+  const res = await fetch("/api/command", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text})});
+  const body = await res.json();
+  if (!body.ok) err.textContent = body.error || "지시를 보내지 못했습니다";
+}
+document.getElementById("qbtns").addEventListener("click", e => { const t = e.target.dataset.text; if (t) sendCommand(t); });
+document.getElementById("dform").addEventListener("submit", e => {
+  e.preventDefault(); const input = document.getElementById("dinput");
+  if (input.value.trim()) { sendCommand(input.value.trim()); input.value = ""; }
+});
+
+const FIELD_KO = {...Object.fromEntries(KNOBS), seek: "상대 추적", farm_target: "농사 대상", npc_policy: "NPC 대응", class_choice: "클래스", build: "빌드"};
+function changeText(changes) {
+  return Object.entries(changes || {}).filter(([k]) => k !== "note").map(([k, v]) =>
+    `${FIELD_KO[k] ?? k} ${Array.isArray(v) ? "변경" : typeof v === "number" ? v.toFixed(2) : esc(v)}`).join(", ");
+}
+
+function renderDirector() {
+  if (!DIR) return;
+  const live = !!S.frame && !S.ended;
+  document.getElementById("dstatus").textContent = live ? "경기 중 · 지시 가능" : S.ended ? "경기 종료" : "대기";
+  document.querySelectorAll("#qbtns button, #dform button").forEach(b => b.disabled = !live);
+  const items = [...S.cmds.values()].reverse().map(c => {
+    const r = c.result;
+    const waiting = c.status === "해석 중" ? ` ${((Date.now() - c.since) / 1000).toFixed(0)}초` : "";
+    const cls = c.status === "실패" ? "fail" : c.status === "적용됨" ? "ok" : "wait";
+    const latency = r && r.ok ? ` · ${(r.latency_ms / 1000).toFixed(1)}초` : "";
+    let body = "";
+    if (r && r.ok) {
+      body += `<div class="meta">${esc(r.interpretation || "")}${r.feasible === false ? " · ⚠️ 그대로는 실행 불가" : ""}</div>`;
+      if (r.changes) body += `<div class="meta">${changeText(r.changes)}</div>`;
+      if (r.opinion) body += `<div class="opinion">AI 의견: ${esc(r.opinion)}</div>`;
+    } else if (r) body += `<div class="meta bad">${esc(r.error)}</div>`;
+    if (c.reverted) body += `<div class="meta">${fmt(c.reverted / 30)}에 원래대로 복귀</div>`;
+    return `<li>“${esc(c.text)}”<span class="tag">${c.kind === "llm" ? "AI 해석" : "즉시"}</span><span class="tag ${cls}">${c.status}${waiting}${latency}</span>${body}</li>`;
+  });
+  document.getElementById("dlist").innerHTML = items.join("");
+}
+
+// ---------------- review ----------------
+function renderReview() {
+  const box = document.getElementById("review"), R = S.review;
+  box.hidden = !(R.busy || R.ready);
+  if (box.hidden) return;
+  document.getElementById("rreport").textContent = R.report ?? "코치가 복기 보고서를 쓰는 중입니다…";
+  const msgs = R.messages.map(m => `<li class="${m.role}">${esc(m.text)}</li>`);
+  if (R.busy && R.ready) msgs.push(`<li class="coach meta">코치가 답변 중…</li>`);
+  document.getElementById("rmsgs").innerHTML = msgs.join("");
+  document.getElementById("rinput").disabled = !R.ready || R.busy;
+}
+document.getElementById("rform").addEventListener("submit", async e => {
+  e.preventDefault();
+  const input = document.getElementById("rinput"), text = input.value.trim(), err = document.getElementById("rerr");
+  if (!text) return;
+  input.value = ""; err.textContent = "";
+  const body = await (await fetch("/api/review", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({message: text})})).json();
+  if (!body.ok) err.textContent = body.error;
+});
+async function loadReview() {
+  const res = await fetch("/api/review");
+  if (!res.ok) return;
+  Object.assign(S.review, await res.json());
+  renderReview();
 }
 
 const rematch = document.getElementById("rematch");
@@ -275,7 +403,7 @@ rematch.onclick = async () => { rematch.disabled = true; await fetch("/api/match
 
 function connect() {
   const ws = new WebSocket(`ws://${location.host}/ws`), conn = document.getElementById("conn");
-  ws.onopen = () => { conn.className = "conn on"; conn.textContent = "연결됨"; reset(); renderSide(); };
+  ws.onopen = () => { conn.className = "conn on"; conn.textContent = "연결됨"; reset(); renderSide(); loadDirector(); loadReview(); };
   ws.onclose = () => { conn.className = "conn off"; conn.textContent = "연결 끊김 · 재연결 중"; setTimeout(connect, 1500); };
   ws.onmessage = m => apply(JSON.parse(m.data));
 }

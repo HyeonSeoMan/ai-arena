@@ -31,7 +31,9 @@ from arena.pong.match import PongConfig, run_pong
 from arena.pong.replay import verify_pong
 from arena.runner import MatchConfig, run_match
 from arena.tanks import coach as tanks_coach
+from arena.tanks.director import Director, quick_buttons
 from arena.tanks.match import TanksConfig, run_tanks
+from arena.tanks.review import Review
 from arena.tanks.replay import verify_tanks
 
 MATCHES_DIR = Path("matches")
@@ -184,7 +186,41 @@ async def tanks(args: argparse.Namespace) -> int:
 
     from arena.web.server import Arena
 
-    arena = Arena(first, second, lambda a, b, log: run_tanks(a, b, log, config), TANKS_DIR, page="tanks.html")
+    if args.director == "none":
+        arena = Arena(first, second, lambda a, b, log: run_tanks(a, b, log, config), TANKS_DIR, page="tanks.html")
+        await run_server(arena, args)
+        return 0
+
+    # The owner directs one coach live; its CLI agent (if any) interprets instructions and writes the review.
+    directed = first if args.director == "first" else second
+    director = Director(side=0, agent=getattr(directed, "agent", None))
+    current: dict = {"review": None}
+
+    async def run(a, b, log: EventLog) -> None:
+        director.side = 0 if a is directed else 1  # rematches swap sides
+        current["review"] = None
+        await run_tanks(a, b, log, config, director=director)
+        log.close()
+        if director.agent is not None and log.finished:
+            review = Review(director.agent, director.side, log.path.with_name(f"{log.match_id}.review.json"),
+                            notify=lambda type_, data: log.broadcast(type_, **data))
+            current["review"] = review
+            await review.start(log.events)
+
+    async def review_chat(message: str) -> dict:
+        if current["review"] is None:
+            return {"ok": False, "error": "no review for this match yet"}
+        return await current["review"].chat(message)
+
+    hooks = {
+        "director_info": lambda: {"side": director.side, "name": directed.name, "active": director.active,
+                                  "llm": director.agent is not None, "buttons": quick_buttons()},
+        "command": director.submit,
+        "review_state": lambda: current["review"].state() if current["review"] else
+        {"ready": False, "busy": False, "report": None, "messages": []},
+        "review_chat": review_chat,
+    }
+    arena = Arena(first, second, run, TANKS_DIR, page="tanks.html", hooks=hooks)
     await run_server(arena, args)
     return 0
 
@@ -266,6 +302,8 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--seed", type=int, default=None)
     t.add_argument("--dummy-delay", type=float, default=0.0, help="thinking time for dummy coaches (seconds)")
     t.add_argument("--fast", action="store_true", help="simulate without real-time pacing or browser")
+    t.add_argument("--director", choices=("none", "first", "second"), default="none",
+                   help="direct this coach live from the browser (instructions + post-match review)")
     t.add_argument("--port", type=int, default=8000)
     t.add_argument("--no-browser", action="store_true")
     t.add_argument("--start-delay", type=float, default=2.0)
