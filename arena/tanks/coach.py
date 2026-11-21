@@ -62,6 +62,8 @@ Behaviour fields (numbers 0..1):
 - strafe: sideways dodging while fighting
 - aim_lead: 0 = aim at the target, 1 = aim where it is heading
 - center_bias: preference for the richer but more contested centre
+- seek: when the opponent is out of sight, how much to go looking for it (last seen spot, then exploring)
+  instead of farming. 0 = never hunt; aggression alone only matters once the opponent is visible.
 - note: one short sentence in Korean explaining your plan (shown to spectators)"""
 
 
@@ -92,7 +94,7 @@ def build_coach_prompt(b: Briefing) -> str:
     parts.append(
         f"You have {b.seconds:g} seconds. Do not run commands or read files.\n"
         "Reply with ONLY a JSON object with keys build, class_choice, farm_target, npc_policy, aggression, "
-        "engage_range, retreat_hp, strafe, aim_lead, center_bias, note."
+        "engage_range, retreat_hp, strafe, aim_lead, center_bias, seek, note."
     )
     return "\n\n".join(parts)
 

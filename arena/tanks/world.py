@@ -67,6 +67,8 @@ class Tank:
     # bot memory
     strafe_dir: int = 1
     waypoint: tuple[float, float] | None = None
+    search_goal: tuple[float, float] | None = None  # where `seek` is heading when the opponent is out of sight
+    searched_tick: int = -1  # sighting tick whose position has already been checked
     seen: dict = field(default_factory=dict)  # tank id -> (tick, x, y, vx, vy, level, cls)
     segment: dict = field(default_factory=new_segment)
 
@@ -425,6 +427,7 @@ class World:
         t.hp = t.max_hp
         t.last_hit_by = None
         t.waypoint = None
+        t.search_goal = None
         self._reset_barrels(t)
         self.events.append({"type": "respawn", "tank": t.id})
 

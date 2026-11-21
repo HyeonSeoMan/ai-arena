@@ -57,7 +57,26 @@ def _decide(world: World, me: Tank) -> tuple[float, float, float, bool]:
         ax, ay = _unit(me.x - npc.x, me.y - npc.y)
         fx, fy, aim, fire = farm
         return fx * 0.4 + ax, fy * 0.4 + ay, aim, fire
+    if s.seek > 0 and me.is_ai and not any(t.is_ai for t in visible):
+        sx, sy = _seek(world, me)
+        fx, fy, aim, fire = farm
+        return fx * (1 - s.seek) + sx * s.seek * 1.5, fy * (1 - s.seek) + sy * s.seek * 1.5, aim, fire
     return farm
+
+
+def _seek(world: World, me: Tank) -> tuple[float, float]:
+    """Head for where the opponent was last seen; once that spot is checked, explore."""
+    opp_id = 1 - me.id
+    seen = me.seen.get(opp_id)
+    if seen is not None and seen[0] != me.searched_tick:
+        goal = (seen[1], seen[2])
+        if math.hypot(goal[0] - me.x, goal[1] - me.y) < 60:
+            me.searched_tick = seen[0]  # nothing here any more
+        else:
+            return _unit(goal[0] - me.x, goal[1] - me.y)
+    if me.search_goal is None or math.hypot(me.search_goal[0] - me.x, me.search_goal[1] - me.y) < 60:
+        me.search_goal = (world.rng.uniform(150, R.MAP_SIZE - 150), world.rng.uniform(150, R.MAP_SIZE - 150))
+    return _unit(me.search_goal[0] - me.x, me.search_goal[1] - me.y)
 
 
 def _pick_target(me: Tank, visible: list[Tank], hp_frac: float) -> Tank | None:

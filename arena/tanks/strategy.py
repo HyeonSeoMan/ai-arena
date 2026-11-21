@@ -9,6 +9,8 @@ from arena.tanks.rules import STATS, UPGRADE_CLASSES
 FARM_TARGETS = ("nearest", "valuable", "safe")
 NPC_POLICIES = ("avoid", "hunt", "ignore")
 UNIT_FIELDS = ("aggression", "engage_range", "retreat_hp", "strafe", "aim_lead", "center_bias")
+# Added after the first matches were logged: optional when parsing so old logs still replay.
+OPTIONAL_UNIT_FIELDS = {"seek": 0.0}
 MAX_BUILD = 60
 MAX_NOTE = 200
 
@@ -31,6 +33,7 @@ class Strategy:
     strafe: float = 0.5
     aim_lead: float = 0.5
     center_bias: float = 0.5
+    seek: float = 0.0
     note: str = ""
 
     def to_dict(self) -> dict:
@@ -46,10 +49,10 @@ STRATEGY_SCHEMA = {
         "class_choice": {"type": "string", "enum": list(UPGRADE_CLASSES)},
         "farm_target": {"type": "string", "enum": list(FARM_TARGETS)},
         "npc_policy": {"type": "string", "enum": list(NPC_POLICIES)},
-        **{name: {"type": "number"} for name in UNIT_FIELDS},
+        **{name: {"type": "number"} for name in (*UNIT_FIELDS, *OPTIONAL_UNIT_FIELDS)},
         "note": {"type": "string"},
     },
-    "required": ["build", "class_choice", "farm_target", "npc_policy", *UNIT_FIELDS, "note"],
+    "required": ["build", "class_choice", "farm_target", "npc_policy", *UNIT_FIELDS, *OPTIONAL_UNIT_FIELDS, "note"],
     "additionalProperties": False,
 }
 
@@ -76,8 +79,8 @@ def parse_strategy(data: object) -> Strategy:
     if bad:
         raise StrategyError(f"unknown stats in build: {bad[:3]}; valid: {', '.join(STATS)}")
     values = {}
-    for name in UNIT_FIELDS:
-        value = data.get(name)
+    for name in (*UNIT_FIELDS, *OPTIONAL_UNIT_FIELDS):
+        value = data.get(name, OPTIONAL_UNIT_FIELDS.get(name))
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise StrategyError(f"{name} must be a number between 0 and 1, got {value!r}")
         values[name] = min(1.0, max(0.0, float(value)))
