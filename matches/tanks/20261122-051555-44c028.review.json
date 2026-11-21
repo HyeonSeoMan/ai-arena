@@ -1,0 +1,316 @@
+{
+  "side": 0,
+  "context": {
+    "you": "claude",
+    "opponent": "codex",
+    "result": "win",
+    "reason": "kills",
+    "duration": "4:00",
+    "kills": {
+      "you": 3,
+      "opponent": 0
+    },
+    "scores": {
+      "you": 8934,
+      "opponent": 5705
+    },
+    "levels": {
+      "you": 28,
+      "opponent": 11
+    },
+    "timeline": [
+      "    your coach set: 초반엔 안전하게 파밍하고 레벨 우위를 잡은 뒤 상대를 압박한다.",
+      "1:30 coach timeout (quiet)",
+      "    your coach set: 체력이 낮으니 NPC는 피하고 펜타곤으로 레벨을 올리며 상대가 보이면 견제한다.",
+      "1:49 coach timeout (level15)",
+      "    your coach set: 체력을 회복하며 안전하게 파밍하고, 상대가 약해 보이면 공격적으로 킬을 노린다.",
+      "1:49 opponent became twin",
+      "2:36 coach timeout (level15)",
+      "    your coach set: 중앙에서 파밍하며 점수를 따라잡고, 상대를 찾으면 공격적으로 킬을 노린다.",
+      "2:36 you became twin",
+      "3:18 you killed NPC",
+      "3:34 you killed opponent",
+      "3:34 coach timeout (death)",
+      "    your coach set: 체력을 지키면서 중앙에서 파밍하고, 상대를 찾으면 공격적으로 두 번째 킬을 노린다.",
+      "3:46 you killed opponent",
+      "3:46 coach timeout (death)",
+      "    your coach set: 체력을 회복하며 파밍하다가 상대가 보이면 마지막 킬을 노린다.",
+      "4:00 you killed opponent"
+    ],
+    "director_commands": [
+      {
+        "command_id": 1,
+        "text": "코덱스 말고 봇들을 쉽게 사냥할수있는 레벨이 되면 공격적으로 노려서 킬수를 올려",
+        "kind": "llm",
+        "issued_s": 59.7,
+        "applied_s": 69.7,
+        "latency_ms": 9993,
+        "opinion": "NPC 처치는 게임 규칙상 킬 수에 포함되지 않아 킬 수를 올리는 건 불가능하고, 레벨·XP를 올리는 효과만 있습니다. 방금 NPC에게 72 피해를 입었고 체력이 낮아 지금 사냥하면 위험하니, 체력 회복 후에 하는 게 좋습니다.",
+        "changes": {
+          "npc_policy": [
+            "ignore",
+            "hunt"
+          ],
+          "retreat_hp": [
+            0.35,
+            0.4
+          ]
+        },
+        "effect": {
+          "with": {
+            "avg_distance": 361.8,
+            "engaged_seconds": 10.0,
+            "damage_dealt": 0.0,
+            "damage_taken": 43.5,
+            "xp_gained": 160,
+            "kills": 0,
+            "deaths": 0
+          },
+          "without": {
+            "avg_distance": 366.1,
+            "engaged_seconds": 9.4,
+            "damage_dealt": 0.0,
+            "damage_taken": 72.5,
+            "xp_gained": 125,
+            "kills": 0,
+            "deaths": 0
+          },
+          "delta": {
+            "avg_distance": -4.3,
+            "engaged_seconds": 0.6,
+            "damage_dealt": 0.0,
+            "damage_taken": -29.0,
+            "xp_gained": 35,
+            "kills": 0,
+            "deaths": 0
+          },
+          "seconds": 10.0
+        }
+      },
+      {
+        "command_id": 2,
+        "text": "중앙으로",
+        "kind": "quick",
+        "issued_s": 125.1,
+        "applied_s": 125.1,
+        "latency_ms": 8,
+        "opinion": null,
+        "changes": {
+          "center_bias": [
+            0.5,
+            0.9
+          ]
+        },
+        "effect": {
+          "with": {
+            "avg_distance": 338.9,
+            "engaged_seconds": 10.0,
+            "damage_dealt": 43.5,
+            "damage_taken": 0.0,
+            "xp_gained": 10,
+            "kills": 0,
+            "deaths": 0
+          },
+          "without": {
+            "avg_distance": 338.9,
+            "engaged_seconds": 10.0,
+            "damage_dealt": 43.5,
+            "damage_taken": 0.0,
+            "xp_gained": 10,
+            "kills": 0,
+            "deaths": 0
+          },
+          "delta": {
+            "avg_distance": 0.0,
+            "engaged_seconds": 0.0,
+            "damage_dealt": 0.0,
+            "damage_taken": 0.0,
+            "xp_gained": 0,
+            "kills": 0,
+            "deaths": 0
+          },
+          "seconds": 10.0
+        }
+      },
+      {
+        "command_id": 3,
+        "text": "공격적으로",
+        "kind": "quick",
+        "issued_s": 190.1,
+        "applied_s": 190.1,
+        "latency_ms": 23,
+        "opinion": null,
+        "changes": {
+          "aggression": [
+            0.65,
+            0.95
+          ],
+          "engage_range": [
+            0.45,
+            0.25
+          ],
+          "seek": [
+            0.5,
+            0.8
+          ]
+        },
+        "effect": {
+          "with": {
+            "avg_distance": 533.8,
+            "engaged_seconds": 2.6,
+            "damage_dealt": 0.0,
+            "damage_taken": 58.0,
+            "xp_gained": 996,
+            "kills": 0,
+            "deaths": 0
+          },
+          "without": {
+            "avg_distance": 397.4,
+            "engaged_seconds": 7.0,
+            "damage_dealt": 27.3,
+            "damage_taken": 0.0,
+            "xp_gained": 365,
+            "kills": 0,
+            "deaths": 0
+          },
+          "delta": {
+            "avg_distance": 136.4,
+            "engaged_seconds": -4.4,
+            "damage_dealt": -27.3,
+            "damage_taken": 58.0,
+            "xp_gained": 631,
+            "kills": 0,
+            "deaths": 0
+          },
+          "seconds": 10.0
+        }
+      },
+      {
+        "command_id": 4,
+        "text": "체력을 회복하자",
+        "kind": "llm",
+        "issued_s": 223.6,
+        "applied_s": 226.0,
+        "latency_ms": 5612,
+        "opinion": "상대가 방금 근처(약 240 거리)에서 보였고 점수도 826 앞서 있으니, 체력이 회복될 때까지 거리를 두는 것이 안전하다. 회복 후 다시 공격으로 전환하는 것을 권한다.",
+        "changes": {
+          "farm_target": [
+            "valuable",
+            "safe"
+          ],
+          "npc_policy": [
+            "ignore",
+            "avoid"
+          ],
+          "aggression": [
+            0.8,
+            0.3
+          ],
+          "engage_range": [
+            0.35,
+            0.6
+          ],
+          "retreat_hp": [
+            0.4,
+            0.5
+          ],
+          "center_bias": [
+            0.7,
+            0.3
+          ],
+          "seek": [
+            0.7,
+            0.1
+          ]
+        },
+        "effect": {
+          "with": {
+            "avg_distance": 444.6,
+            "engaged_seconds": 1.7,
+            "damage_dealt": 0.0,
+            "damage_taken": 12.4,
+            "xp_gained": 580,
+            "kills": 0,
+            "deaths": 0
+          },
+          "without": {
+            "avg_distance": 729.7,
+            "engaged_seconds": 0.0,
+            "damage_dealt": 0.0,
+            "damage_taken": 26.4,
+            "xp_gained": 400,
+            "kills": 0,
+            "deaths": 0
+          },
+          "delta": {
+            "avg_distance": -285.1,
+            "engaged_seconds": 1.7,
+            "damage_dealt": 0.0,
+            "damage_taken": -14.0,
+            "xp_gained": 180,
+            "kills": 0,
+            "deaths": 0
+          },
+          "seconds": 5.9
+        }
+      },
+      {
+        "command_id": 5,
+        "text": "공격적으로",
+        "kind": "quick",
+        "issued_s": 232.0,
+        "applied_s": 232.0,
+        "latency_ms": 22,
+        "opinion": null,
+        "changes": {
+          "aggression": [
+            0.3,
+            0.75
+          ],
+          "engage_range": [
+            0.6,
+            0.4
+          ],
+          "seek": [
+            0.1,
+            0.8
+          ]
+        },
+        "effect": {
+          "with": {
+            "avg_distance": 327.0,
+            "engaged_seconds": 8.7,
+            "damage_dealt": 154.3,
+            "damage_taken": 41.1,
+            "xp_gained": 872,
+            "kills": 1,
+            "deaths": 0
+          },
+          "without": {
+            "avg_distance": 360.7,
+            "engaged_seconds": 8.7,
+            "damage_dealt": 34.3,
+            "damage_taken": 0.0,
+            "xp_gained": 55,
+            "kills": 0,
+            "deaths": 0
+          },
+          "delta": {
+            "avg_distance": -33.7,
+            "engaged_seconds": 0.0,
+            "damage_dealt": 120.0,
+            "damage_taken": 41.1,
+            "xp_gained": 817,
+            "kills": 1,
+            "deaths": 0
+          },
+          "seconds": 8.7
+        }
+      }
+    ],
+    "failed_commands": [],
+    "notes": "Each director command's `effect` compares the next seconds with a counterfactual where the command was not given (same match state, deterministic simulation): `with`, `without`, `delta`."
+  },
+  "report": "1. 결과 요약\ncodex를 상대로 3:0 킬, 점수 8934 대 5705, 레벨 28 대 11로 승리했습니다. 4:00에 킬 수 조건으로 끝났습니다. 결정적 순간은 3:34, 3:46, 4:00에 이어진 연속 킬입니다. 3:18에 NPC를 처치한 뒤 곧바로 상대를 잡아낸 흐름이 컸습니다.\n\n2. 감독 지시별 효과\n- 지시 1 (봇 사냥, 69.7초 적용): 받은 피해가 72.5에서 43.5로 줄었고(-29.0), XP는 +35, 교전 시간은 +0.6초였습니다. 거리 변화는 -4.3으로 미미합니다. 다만 킬 수를 올리라는 목표는 NPC 처치가 킬에 포함되지 않아 달성할 수 없었고, 효과는 레벨·XP에 그쳤습니다.\n- 지시 2 (중앙으로): 거리, 교전, 피해, XP 모두 변화 0이었습니다. 효과가 없었습니다.\n- 지시 3 (공격적으로, 190.1초): XP는 +631이었지만, 거리가 136.4 멀어졌고 교전 시간은 4.4초 줄었으며, 입힌 피해는 27.3 감소, 받은 피해는 58.0 증가했습니다. 공격 의도와 달리 실제로는 역효과였습니다.\n- 지시 4 (체력 회복): 받은 피해가 -14.0, XP +180, 거리 -285.1이었습니다. 피해는 줄었지만 이 거리 감소는 회복 목적과 어긋나 보입니다.\n- 지시 5 (공격적으로, 232.0초): 입힌 피해 +120.0, 킬 +1, XP +817, 받은 피해 +41.1이었습니다. 이번 경기에서 가장 효과가 컸고, 3:34의 첫 킬로 이어졌습니다.\n\n3. 코치 판단\n잘한 점: 초반에 파밍과 레벨 우위를 먼저 확보했고, 감독의 지시 1에 대해 킬이 오르지 않는다는 점과 체력 위험을 정확히 지적했습니다. 상대가 보일 때 킬을 노리는 방침을 유지해 마지막 3연속 킬을 만들었습니다.\n잘못한 점: 지시 3 직후 거리가 벌어지고 피해만 늘어난 것은 공격 전환 설정이 교전으로 이어지지 못했다는 뜻입니다. 지시 4에서는 회복을 위해 seek를 낮췄는데도 거리가 줄어, 회복 행동이 제대로 작동했는지 의문입니다.\n\n4. 다음 경기 제안\n- 공격 전환 전에 체력을 회복하고 상대 위치를 확인한 뒤 지시하세요. 지시 5는 상대가 근처에 있었을 때 효과가 컸습니다.\n- 중앙 이동 같은 짧은 지시는 효과가 없었으니, 상대 위치나 체력 같은 조건을 붙여 지시하세요.\n- 킬이 목적이면 NPC 사냥 대신 레벨 우위를 유지한 채 상대 탐색(seek)을 높이는 방침이 낫습니다.",
+  "messages": []
+}
