@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coach Tanks</title>
+<style>
+  :root {
+    --bg: #eef0f2; --panel: #ffffff; --ink: #1c1d21; --muted: #6b6e76; --line: #dfe2e6;
+    --field: #cdcdcd; --grid: #c3c3c3; --a: #e4572e; --b: #2f8fd9; --npc: #8d8d8d; --good: #2c8a4b; --bad: #c8412b;
+    --square: #ffe869; --triangle: #fc7677; --pentagon: #768dfc; --barrel: #999999; --outline: #555555;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121316; --panel: #1d1f23; --ink: #ececef; --muted: #9a9ca4; --line: #30333a;
+            --field: #2a2c30; --grid: #33363b; --good: #5fcf86; --bad: #ff7a63; --outline: #111; --barrel: #777; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; }
+  header .spacer { flex: 1; }
+  #clock { font-variant-numeric: tabular-nums; font-weight: 700; }
+  button { font: inherit; color: #fff; background: var(--b); border: 0; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  .conn { font-size: 12px; color: var(--muted); }
+  .conn.on::before { content: "● "; color: var(--good); } .conn.off::before { content: "● "; color: var(--bad); }
+  main { display: grid; grid-template-columns: minmax(300px, 1fr) 360px; gap: 16px; padding: 16px; max-width: 1300px; margin: 0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .arena { position: relative; }
+  canvas { width: 100%; aspect-ratio: 1; display: block; border-radius: 12px; }
+  .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  .overlay .box { background: rgba(0,0,0,.68); color: #fff; padding: 14px 20px; border-radius: 12px; text-align: center; min-width: 260px; max-width: 80%; }
+  .overlay .box b { font-size: 18px; display: block; margin-bottom: 4px; }
+  .overlay .why { font-size: 13px; opacity: .85; margin-bottom: 8px; }
+  .overlay .row { display: flex; justify-content: space-between; gap: 18px; font-size: 13px; }
+  .side { display: flex; flex-direction: column; gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  .card.a { border-top: 4px solid var(--a); } .card.b { border-top: 4px solid var(--b); }
+  .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .head .name { font-weight: 700; font-size: 16px; }
+  .card.a .name { color: var(--a); } .card.b .name { color: var(--b); }
+  .head .kd { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .meta { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin: 4px 0; }
+  .bar i { display: block; height: 100%; }
+  .bar.hp i { background: var(--good); } .bar.xp i { background: #e5c13a; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; margin-top: 8px; font-size: 11px; }
+  .stat { display: grid; grid-template-columns: 74px 1fr; align-items: center; gap: 6px; }
+  .pips { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .pips i { height: 6px; border-radius: 2px; background: var(--line); }
+  .card.a .pips i.on { background: var(--a); } .card.b .pips i.on { background: var(--b); }
+  .plan { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 8px; }
+  .plan .note { font-size: 14px; margin-bottom: 4px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+  .tags span { font-size: 11px; background: var(--bg); border-radius: 6px; padding: 2px 6px; }
+  .knobs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; font-size: 11px; }
+  .knob { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 6px; }
+  .knob .t { height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  .card.a .knob .t i { background: var(--a); } .card.b .knob .t i { background: var(--b); }
+  .knob .t i { display: block; height: 100%; }
+  #feed { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; font-size: 13px; }
+  #feed li { border-top: 1px solid var(--line); padding: 6px 2px; }
+  #feed li:first-child { border-top: 0; }
+  #feed details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  #feed pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); padding: 8px; border-radius: 6px; margin: 6px 0 0; font-size: 11px; }
+  .ta { color: var(--a); font-weight: 600; } .tb { color: var(--b); font-weight: 600; } .bad { color: var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1>AI Arena · Coach Tanks</h1>
+  <span id="conn" class="conn off">연결 중</span>
+  <span class="spacer"></span>
+  <span id="clock">0:00</span>
+  <button id="rematch" disabled>재대결</button>
+</header>
+<main>
+  <section class="arena">
+    <canvas id="map" width="1200" height="1200" aria-label="경기장"></canvas>
+    <div class="overlay" id="overlay" hidden><div class="box" id="overlayBox"></div></div>
+  </section>
+  <section class="side">
+    <div class="card a" id="cardA"></div>
+    <div class="card b" id="cardB"></div>
+    <div class="card"><div class="meta" style="margin-bottom:6px">경기 기록</div><ul id="feed"></ul></div>
+  </section>
+</main>
+<script>
+const STAT_KO = {health_regen: "체력 재생", max_health: "최대 체력", body_damage: "몸통 피해", bullet_speed: "총알 속도",
+                 bullet_penetration: "관통", bullet_damage: "총알 피해", reload: "재장전", movement_speed: "이동 속도"};
+const CLASS_KO = {basic: "기본", twin: "트윈", sniper: "스나이퍼", machine_gun: "머신건", flank: "플랭크"};
+const FARM_KO = {nearest: "가까운 도형", valuable: "고득점 도형", safe: "안전한 도형"};
+const NPC_KO = {avoid: "NPC 회피", hunt: "NPC 사냥", ignore: "NPC 무시"};
+const KNOBS = [["aggression", "공격성"], ["engage_range", "교전 거리"], ["retreat_hp", "후퇴 체력"],
+               ["strafe", "회피 기동"], ["aim_lead", "예측 조준"], ["center_bias", "중앙 선호"]];
+const PHASE = {pregame: "사전 작전 회의", death: "작전 타임 · 처치 발생", level15: "작전 타임 · 레벨 15", quiet: "작전 타임 · 정기 점검"};
+const STATS = Object.keys(STAT_KO);
+const SIDE_CLS = ["ta", "tb"];
+
+let S;
+function reset() { S = { names: ["-", "-"], frame: null, status: [null, null], strategies: [null, null], timeout: null,
+                         ended: null, feed: [], matchSeconds: 360 }; }
+reset();
+
+function esc(t) { return String(t ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c])); }
+function who(i) { return `<span class="${SIDE_CLS[i]}">${esc(S.names[i])}</span>`; }
+function tankName(id) { return id === 0 || id === 1 ? who(id) : (S.frame?.tanks[id]?.name ?? `NPC`); }
+
+function apply(e) {
+  switch (e.type) {
+    case "match_started": reset(); S.names = [e.left, e.right]; S.matchSeconds = e.config.match_seconds; break;
+    case "frame": S.frame = e; if (e.status) S.status = e.status; return;
+    case "timeout_started":
+      S.timeout = {phase: e.phase, why: e.trigger, until: Date.now() + e.seconds * 1000, st: ["생각 중…", "생각 중…"]};
+      S.feed.push(e); break;
+    case "strategy_set":
+      S.strategies[e.side] = e.strategy;
+      if (S.timeout) S.timeout.st[e.side] = `작전 변경 (${(e.elapsed_ms / 1000).toFixed(1)}초)`;
+      S.feed.push(e); break;
+    case "strategy_kept": if (S.timeout) S.timeout.st[e.side] = "기존 작전 유지"; S.feed.push(e); break;
+    case "strategy_applied": S.strategies = e.strategies; break;
+    case "timeout_ended": S.timeout = null; break;
+    case "kill": case "class_changed": S.feed.push(e); break;
+    case "match_ended": S.ended = e; S.feed.push(e); break;
+    default: return;
+  }
+  renderSide();
+}
+
+// ---------------- drawing ----------------
+const canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
+function css(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+const SHAPE = {s: ["--square", 4], t: ["--triangle", 3], p: ["--pentagon", 5]};
+const SHAPE_R = {s: 11, t: 12, p: 22};
+const BARRELS = {basic: [[0, 0]], twin: [[0, -6], [0, 6]], sniper: [[0, 0]], machine_gun: [[0, 0]], flank: [[0, 0], [Math.PI, 0]]};
+
+function tankColor(t) { return t.id === 0 ? css("--a") : t.id === 1 ? css("--b") : css("--npc"); }
+
+function draw() {
+  const W = canvas.width, k = W / 1200;
+  ctx.fillStyle = css("--field"); ctx.fillRect(0, 0, W, W);
+  ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+  for (let g = 0; g <= 1200; g += 40) {
+    ctx.beginPath(); ctx.moveTo(g * k, 0); ctx.lineTo(g * k, W); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, g * k); ctx.lineTo(W, g * k); ctx.stroke();
+  }
+  const f = S.frame; if (!f) return;
+  const outline = css("--outline");
+  for (const [id, kind, x, y, ang, hp] of f.shapes) {
+    const [col, sides] = SHAPE[kind], r = SHAPE_R[kind] * k;
+    ctx.beginPath();
+    for (let i = 0; i < sides; i++) {
+      const a = ang + (i / sides) * Math.PI * 2;
+      ctx[i ? "lineTo" : "moveTo"](x * k + Math.cos(a) * r, y * k + Math.sin(a) * r);
+    }
+    ctx.closePath(); ctx.fillStyle = css(col); ctx.globalAlpha = 0.45 + 0.55 * hp; ctx.fill();
+    ctx.globalAlpha = 1; ctx.strokeStyle = outline; ctx.lineWidth = 2; ctx.stroke();
+  }
+  for (const t of f.tanks) {
+    if (!t.alive || !t.ai) continue;
+    ctx.beginPath(); ctx.arc(t.x * k, t.y * k, t.view * k, 0, 7);
+    ctx.strokeStyle = tankColor(t); ctx.globalAlpha = 0.18; ctx.lineWidth = 2; ctx.setLineDash([8, 10]); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+  for (const [x, y, owner] of f.bullets) {
+    ctx.beginPath(); ctx.arc(x * k, y * k, 5 * k, 0, 7);
+    ctx.fillStyle = tankColor({id: owner}); ctx.fill(); ctx.strokeStyle = outline; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+  for (const t of f.tanks) {
+    if (!t.alive) continue;
+    const x = t.x * k, y = t.y * k, r = t.r * k;
+    const long = t.cls === "sniper" ? 2.2 : 1.8, wide = t.cls === "machine_gun" ? 1.1 : 0.8;
+    for (const [off, side] of BARRELS[t.cls] ?? BARRELS.basic) {
+      ctx.save(); ctx.translate(x, y); ctx.rotate(t.aim + off);
+      ctx.fillStyle = css("--barrel"); ctx.strokeStyle = outline; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.rect(0, side * k - r * wide / 2, r * long, r * wide); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = tankColor(t); ctx.fill();
+    ctx.strokeStyle = outline; ctx.lineWidth = 2.5; ctx.stroke();
+    if (t.shield) { ctx.beginPath(); ctx.arc(x, y, r + 6, 0, 7); ctx.strokeStyle = "#fff"; ctx.globalAlpha = .7; ctx.stroke(); ctx.globalAlpha = 1; }
+    const bw = r * 2.2;
+    ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.fillRect(x - bw / 2, y + r + 6, bw, 5);
+    ctx.fillStyle = t.hp > .35 ? "#5fcf86" : "#ff7a63"; ctx.fillRect(x - bw / 2, y + r + 6, bw * t.hp, 5);
+    ctx.fillStyle = t.ai ? "#fff" : "#eee"; ctx.font = `bold ${Math.round(13 * k + 4)}px sans-serif`; ctx.textAlign = "center";
+    ctx.strokeStyle = "rgba(0,0,0,.6)"; ctx.lineWidth = 3;
+    const label = `${t.name} · Lv${t.level}`;
+    ctx.strokeText(label, x, y - r - 8); ctx.fillText(label, x, y - r - 8);
+  }
+}
+
+// ---------------- side panels ----------------
+function card(i) {
+  const st = S.status[i], plan = S.strategies[i];
+  if (!st) return `<div class="head"><span class="name">${esc(S.names[i])}</span></div><div class="meta">대기 중</div>`;
+  const stats = STATS.map(s => `<div class="stat"><span>${STAT_KO[s]}</span><div class="pips">${
+    Array.from({length: 7}, (_, j) => `<i class="${j < st.stats[s] ? "on" : ""}"></i>`).join("")}</div></div>`).join("");
+  let planHtml = `<div class="meta">작전 대기 중</div>`;
+  if (plan) {
+    const knobs = KNOBS.map(([key, label]) => `<div class="knob"><span>${label}</span><div class="t"><i style="width:${Math.round(plan[key] * 100)}%"></i></div></div>`).join("");
+    const upcoming = nextBuild(plan.build, st.stats, 6).map(s => STAT_KO[s]).join(" → ");
+    planHtml = `<div class="note">${esc(plan.note || "(메모 없음)")}</div>
+      <div class="tags"><span>클래스: ${CLASS_KO[plan.class_choice]}</span><span>${FARM_KO[plan.farm_target]}</span><span>${NPC_KO[plan.npc_policy]}</span></div>
+      <div class="knobs">${knobs}</div><div class="meta" style="margin-top:6px">다음 스탯: ${esc(upcoming || "-")}</div>`;
+  }
+  return `<div class="head"><span class="name">${esc(S.names[i])}</span><span class="kd">${st.kills}킬 / ${st.deaths}데스</span></div>
+    <div class="meta">Lv ${st.level} · ${CLASS_KO[st.cls]} · 점수 ${st.score.toLocaleString()} ${st.alive ? "" : "· 부활 대기"}</div>
+    <div class="bar hp"><i style="width:${st.alive ? Math.round(st.hp / st.max_hp * 100) : 0}%"></i></div>
+    <div class="bar xp"><i style="width:${Math.round(st.xp_progress * 100)}%"></i></div>
+    <div class="stats">${stats}</div><div class="plan">${planHtml}</div>`;
+}
+
+// Mirror of strategy.next_stat: upcoming points given the build order.
+function nextBuild(build, stats, n) {
+  const cur = {...stats}, out = [];
+  for (let k = 0; k < n; k++) {
+    const seen = {}; let pick = null;
+    for (const s of build) { seen[s] = (seen[s] || 0) + 1; if (cur[s] < seen[s] && cur[s] < 7) { pick = s; break; } }
+    if (!pick) break;
+    cur[pick]++; out.push(pick);
+  }
+  return out;
+}
+
+function feedItem(e) {
+  switch (e.type) {
+    case "timeout_started": return `<div class="meta">— ${PHASE[e.phase] ?? e.phase}: ${esc(e.trigger)} —</div>`;
+    case "strategy_set": return `<div>${who(e.side)} 작전: “${esc(e.strategy.note)}”</div><div class="meta">${(e.elapsed_ms / 1000).toFixed(1)}초 · ${CLASS_KO[e.strategy.class_choice]}</div>${e.raw ? `<details><summary>응답 원문</summary><pre>${esc(e.raw)}</pre></details>` : ""}`;
+    case "strategy_kept": return `<div class="bad">${who(e.side)} 기존 작전 유지: ${esc(e.reason)}</div>${e.raw ? `<details><summary>응답 원문</summary><pre>${esc(e.raw)}</pre></details>` : ""}`;
+    case "kill": {
+      const by = e.killer === null ? "도형" : tankName(e.killer);
+      return `<div>${by} ▸ ${tankName(e.victim)} 처치</div><div class="meta">${fmt(e.tick / 30)} · 킬 ${e.kills[0]} : ${e.kills[1]}</div>`;
+    }
+    case "class_changed": return `<div>${tankName(e.tank)} → ${CLASS_KO[e.cls]} 전직</div>`;
+    case "match_ended": {
+      const why = e.reason === "kills" ? `${e.kills[e.winner]}킬 달성` : `점수 ${e.scores[0].toLocaleString()} : ${e.scores[1].toLocaleString()}`;
+      return `<div><b>${who(e.winner)} 승리 · ${why}</b></div>`;
+    }
+  }
+  return "";
+}
+
+function fmt(s) { s = Math.max(0, Math.floor(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
+
+function renderSide() {
+  document.getElementById("cardA").innerHTML = card(0);
+  document.getElementById("cardB").innerHTML = card(1);
+  document.getElementById("feed").innerHTML = S.feed.slice().reverse().map(e => `<li>${feedItem(e)}</li>`).join("");
+  rematch.disabled = !S.ended;
+}
+
+function renderOverlay() {
+  const ov = document.getElementById("overlay"), box = document.getElementById("overlayBox");
+  if (S.ended) {
+    ov.hidden = false; box.innerHTML = feedItem(S.ended);
+  } else if (S.timeout) {
+    ov.hidden = false;
+    const left = Math.max(0, (S.timeout.until - Date.now()) / 1000).toFixed(0);
+    box.innerHTML = `<b>${PHASE[S.timeout.phase] ?? ""} · ${left}초</b><div class="why">${esc(S.timeout.why)}</div>` +
+      [0, 1].map(i => `<div class="row"><span class="${SIDE_CLS[i]}">${esc(S.names[i])}</span><span>${esc(S.timeout.st[i])}</span></div>`).join("");
+  } else ov.hidden = true;
+}
+
+let lastSide = 0;
+function loop(ts) {
+  draw(); renderOverlay();
+  if (S.frame) document.getElementById("clock").textContent = `${fmt(S.frame.t / 30)} / ${fmt(S.matchSeconds)}`;
+  if (ts - lastSide > 250) { lastSide = ts; document.getElementById("cardA").innerHTML = card(0); document.getElementById("cardB").innerHTML = card(1); }
+  requestAnimationFrame(loop);
+}
+
+const rematch = document.getElementById("rematch");
+rematch.onclick = async () => { rematch.disabled = true; await fetch("/api/matches", {method: "POST"}); };
+
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws`), conn = document.getElementById("conn");
+  ws.onopen = () => { conn.className = "conn on"; conn.textContent = "연결됨"; reset(); renderSide(); };
+  ws.onclose = () => { conn.className = "conn off"; conn.textContent = "연결 끊김 · 재연결 중"; setTimeout(connect, 1500); };
+  ws.onmessage = m => apply(JSON.parse(m.data));
+}
+
+renderSide();
+requestAnimationFrame(loop);
+connect();
+</script>
+</body>
+</html>

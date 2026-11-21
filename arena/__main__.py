@@ -5,6 +5,7 @@
     uv run python -m arena replay matches/<match_id>.jsonl
     uv run python -m arena pong --left claude --right codex     # coach pong, watch live
     uv run python -m arena pong --left random --right fixed --fast   # offline, terminal only
+    uv run python -m arena tanks --first claude --second codex   # coach tanks, watch live
 
 `claude` and `codex` run the subscription-authenticated CLIs and require the
 billing preflight to pass; the other agents are offline dummies.
@@ -28,9 +29,13 @@ from arena.pong.coach import FixedCoach, LLMCoach, RandomCoach
 from arena.pong.match import PongConfig, run_pong
 from arena.pong.replay import verify_pong
 from arena.runner import MatchConfig, run_match
+from arena.tanks import coach as tanks_coach
+from arena.tanks.match import TanksConfig, run_tanks
+from arena.tanks.replay import verify_tanks
 
 MATCHES_DIR = Path("matches")
 PONG_DIR = MATCHES_DIR / "pong"
+TANKS_DIR = MATCHES_DIR / "tanks"
 COLOR_NAMES = {1: "black", 2: "white"}
 
 AGENTS = {
@@ -147,8 +152,51 @@ async def pong(args: argparse.Namespace) -> int:
     return 0
 
 
+TANK_COACHES = {
+    "random": lambda name, args: tanks_coach.RandomCoach(name=name, seed=args.seed, delay=args.dummy_delay),
+    "fixed": lambda name, args: tanks_coach.FixedCoach(name=name, delay=args.dummy_delay),
+    "claude": lambda name, args: tanks_coach.LLMCoach(ClaudeCodeAgent(name=name)),
+    "codex": lambda name, args: tanks_coach.LLMCoach(CodexAgent(name=name)),
+}
+
+
+async def tanks(args: argparse.Namespace) -> int:
+    same = args.first == args.second
+    names = (f"{args.first}-A", f"{args.second}-B") if same else (args.first, args.second)
+    preflight({args.first, args.second})
+    first = TANK_COACHES[args.first](names[0], args)
+    second = TANK_COACHES[args.second](names[1], args)
+    config = TanksConfig(timeout_seconds=args.timeout, realtime=not args.fast)
+
+    if args.fast:
+        match_id = new_match_id()
+        log = EventLog(match_id, TANKS_DIR / f"{match_id}.jsonl")
+        try:
+            winner, reason = await run_tanks(first, second, log, config)
+        finally:
+            log.close()
+        end = log.events[-1]
+        print(f"{first.name} vs {second.name}: {(first, second)[winner].name} wins by {reason} "
+              f"(kills {end['kills']}, scores {end['scores']}, levels {end['levels']}, timeouts {end['timeouts']})")
+        print(f"log: {log.path}")
+        return 0
+
+    from arena.web.server import Arena
+
+    arena = Arena(first, second, lambda a, b, log: run_tanks(a, b, log, config), TANKS_DIR, page="tanks.html")
+    await run_server(arena, args)
+    return 0
+
+
 def replay_cmd(args: argparse.Namespace) -> int:
     events = load_events(Path(args.log))
+    if events and events[0].get("game") == "tanks":
+        check = verify_tanks(events)
+        end = events[-1]
+        print(f"replay {'OK' if check.ok else 'MISMATCH'}: kills={end.get('kills')} scores={end.get('scores')}")
+        for problem in check.problems:
+            print(f"  {problem}")
+        return 0 if check.ok else 1
     if events and events[0].get("game") == "pong":
         check = verify_pong(events)
         end = events[-1]
@@ -201,6 +249,17 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--no-browser", action="store_true")
     g.add_argument("--start-delay", type=float, default=2.0)
 
+    t = sub.add_parser("tanks", help="coach tanks: AI coaches set builds and plans, bots fight in real time")
+    t.add_argument("--first", choices=TANK_COACHES, default="random")
+    t.add_argument("--second", choices=TANK_COACHES, default="fixed")
+    t.add_argument("--timeout", type=float, default=TanksConfig.timeout_seconds, help="strategy timeout (seconds)")
+    t.add_argument("--seed", type=int, default=None)
+    t.add_argument("--dummy-delay", type=float, default=0.0, help="thinking time for dummy coaches (seconds)")
+    t.add_argument("--fast", action="store_true", help="simulate without real-time pacing or browser")
+    t.add_argument("--port", type=int, default=8000)
+    t.add_argument("--no-browser", action="store_true")
+    t.add_argument("--start-delay", type=float, default=2.0)
+
     r = sub.add_parser("replay", help="verify a match log by replaying it")
     r.add_argument("log")
 
@@ -212,6 +271,8 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(serve(args))
         if args.command == "pong":
             return asyncio.run(pong(args))
+        if args.command == "tanks":
+            return asyncio.run(tanks(args))
     except BillingGuardError as exc:
         print(f"[billing] {exc}", file=sys.stderr)
         return 2
