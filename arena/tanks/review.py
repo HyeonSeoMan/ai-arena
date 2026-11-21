@@ -35,7 +35,12 @@ def match_context(events: list[Event], side: int) -> dict:
 
     timeline = []
     for e in events:
-        if e["type"] == "kill" and (e["victim_ai"] or e["killer"] == side):
+        if e["type"] == "director_command" and e["side"] == side:
+            timeline.append(f"{_t(e['tick'])} DIRECTOR #{e['id']} ({e['kind']}): {e['text']}")
+        elif e["type"] == "strategy_applied" and e.get("source") == "director" and e.get("side") == side:
+            what = "reverted (temporary command ended)" if e.get("revert") else "applied"
+            timeline.append(f"{_t(e['tick'])}     director #{e['command_id']} {what}")
+        elif e["type"] == "kill" and (e["victim_ai"] or e["killer"] == side):
             timeline.append(f"{_t(e['tick'])} {who(e['killer'])} killed {who(e['victim'])}")
         elif e["type"] == "class_changed":
             timeline.append(f"{_t(e['tick'])} {who(e['tank'])} became {e['cls']}")
@@ -58,8 +63,11 @@ def match_context(events: list[Event], side: int) -> dict:
         "timeline": timeline,
         "director_commands": effects,
         "failed_commands": failed,
-        "notes": ("Each director command's `effect` compares the next seconds with a counterfactual where the "
-                  "command was not given (same match state, deterministic simulation): `with`, `without`, `delta`."),
+        "notes": ("`timeline` is in match time order. Each director command's `effect` compares the span from "
+                  "when it was applied until the next strategy change (`seconds`, at most 30) with a counterfactual "
+                  "where the command was not given (same match state, deterministic simulation): `with`, `without`, "
+                  "`delta`. `events` lists kills/deaths inside that span with seconds after the command. Distance "
+                  "and engagement use only ticks where both tanks were alive in both branches (`compared_seconds`)."),
     }
 
 
@@ -73,7 +81,9 @@ Cover, briefly and concretely, using only the data below:
 3. 코치(당신)의 판단 중 잘한 점과 잘못한 점
 4. 다음 경기를 위한 제안 2~3개 (빌드, 행동 방침, 지시 타이밍)
 
-Do not invent numbers that are not in the data. Plain text, no code blocks, under about 350 Korean words."""
+Check the timeline before attributing an outcome to a command: a command can only explain what happened after it was
+applied, and a kill belongs to the command whose span (`events`) contains it. Do not invent numbers that are not in the
+data. Plain text, no code blocks, under about 350 Korean words."""
 
 CHAT_INSTRUCTIONS = """You are the coach continuing the post-match review with your director (in Korean). Answer the
 director's latest message using the match data and your report. Be concrete and honest; say so when the data cannot

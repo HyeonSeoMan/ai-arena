@@ -64,6 +64,8 @@ Behaviour fields (numbers 0..1):
 - center_bias: preference for the richer but more contested centre
 - seek: when the opponent is out of sight, how much to go looking for it (last seen spot, then exploring)
   instead of farming. 0 = never hunt; aggression alone only matters once the opponent is visible.
+- zone_pull: how strongly to actually move to the area center_bias prefers (centre or edge). 0 = center_bias
+  only affects which visible shape is picked, without relocating.
 - note: one short sentence in Korean explaining your plan (shown to spectators)"""
 
 
@@ -94,7 +96,7 @@ def build_coach_prompt(b: Briefing) -> str:
     parts.append(
         f"You have {b.seconds:g} seconds. Do not run commands or read files.\n"
         "Reply with ONLY a JSON object with keys build, class_choice, farm_target, npc_policy, aggression, "
-        "engage_range, retreat_hp, strafe, aim_lead, center_bias, seek, note."
+        "engage_range, retreat_hp, strafe, aim_lead, center_bias, seek, zone_pull, note."
     )
     return "\n\n".join(parts)
 

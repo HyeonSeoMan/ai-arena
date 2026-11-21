@@ -10,7 +10,7 @@ FARM_TARGETS = ("nearest", "valuable", "safe")
 NPC_POLICIES = ("avoid", "hunt", "ignore")
 UNIT_FIELDS = ("aggression", "engage_range", "retreat_hp", "strafe", "aim_lead", "center_bias")
 # Added after the first matches were logged: optional when parsing so old logs still replay.
-OPTIONAL_UNIT_FIELDS = {"seek": 0.0}
+OPTIONAL_UNIT_FIELDS = {"seek": 0.0, "zone_pull": 0.0}
 MAX_BUILD = 60
 MAX_NOTE = 200
 
@@ -34,6 +34,7 @@ class Strategy:
     aim_lead: float = 0.5
     center_bias: float = 0.5
     seek: float = 0.0
+    zone_pull: float = 0.0
     note: str = ""
 
     def to_dict(self) -> dict:

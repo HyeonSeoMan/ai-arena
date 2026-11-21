@@ -216,8 +216,52 @@ def test_director_effects_compare_against_counterfactual():
     eff = effects[0]
     assert eff["text"] == "공격적으로" and eff["kind"] == "quick"
     assert "aggression" in eff["changes"] and "seek" in eff["changes"]
-    assert eff["effect"]["seconds"] == 10.0
+    assert 0 < eff["effect"]["seconds"] <= 30.0
+    assert eff["effect"]["compared_seconds"] <= eff["effect"]["seconds"]
     assert set(eff["effect"]["delta"]) >= {"avg_distance", "damage_dealt", "xp_gained"}
+    assert "events" in eff["effect"]["with"]
+
+
+def test_compare_averages_distance_over_ticks_alive_in_both_branches():
+    from arena.tanks.analysis import compare
+    from arena.tanks.world import World
+
+    w = World("cmp")
+    while w.tick < 600:
+        w.step()
+    w.tanks[1].last_hit_by = 0
+    w.tanks[1].hp = 0  # the opponent dies on the next tick in both branches
+    result = compare(w, 0, replace(Strategy(), aggression=1.0), 300)
+    dead_ticks = round(R.RESPAWN_SECONDS * R.TICK_RATE)
+    assert result["compared_seconds"] <= round((300 - dead_ticks) * R.DT, 1)
+    assert any(ev["event"] == "you killed the opponent" for ev in result["with"]["events"])
+
+
+def test_quick_center_and_edge_move_the_tank():
+    import copy
+    import math
+
+    from arena.tanks.director import QUICK
+    from arena.tanks.world import World
+
+    import statistics
+
+    moved = {}
+    for qid in ("center", "edge"):
+        deltas = []  # median over several game states: a death in one branch can flip a single sample
+        for seed in range(8):
+            w = World(f"zone{seed}")
+            while w.tick < 1200:
+                w.step()
+            a, b = copy.deepcopy(w), copy.deepcopy(w)
+            a.set_strategy(0, replace(a.tanks[0].strategy, **QUICK[qid][2](a.tanks[0].strategy)))
+            for _ in range(300):
+                a.step()
+                b.step()
+            deltas.append(math.hypot(a.tanks[0].x - 600, a.tanks[0].y - 600)
+                          - math.hypot(b.tanks[0].x - 600, b.tanks[0].y - 600))
+        moved[qid] = statistics.median(deltas)
+    assert moved["center"] < -30 and moved["edge"] > 30
 
 
 def test_published_tank_records_still_replay():

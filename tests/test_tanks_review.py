@@ -51,6 +51,9 @@ def test_context_has_own_side_and_effects_but_not_opponent_plan():
     assert ctx["you"] == "me" and ctx["result"] in ("win", "loss")
     assert ctx["director_commands"][0]["text"] == "공격적으로"
     assert ctx["director_commands"][0]["effect"]["delta"]
+    lines = ctx["timeline"]
+    issued = next(i for i, line in enumerate(lines) if "DIRECTOR #1" in line)
+    assert "applied" in lines[issued + 1]
     text = json.dumps(ctx, ensure_ascii=False)
     assert "상대의 비밀 작전" not in text and "0.111" not in text
 

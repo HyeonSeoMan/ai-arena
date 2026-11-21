@@ -45,8 +45,10 @@ QUICK: dict[str, tuple[str, tuple[str, ...], Callable[[Strategy], dict]]] = {
                 lambda s: {"retreat_hp": 1.0}),
     "farm": ("농사해", ("농사", "파밍", "도형"),
              lambda s: {"aggression": _clamp(s.aggression - 0.4), "farm_target": "valuable", "seek": 0.0}),
-    "center": ("중앙으로", ("중앙", "가운데"), lambda s: {"center_bias": _clamp(s.center_bias + 0.4)}),
-    "edge": ("외곽으로", ("외곽", "구석", "가장자리"), lambda s: {"center_bias": _clamp(s.center_bias - 0.4)}),
+    "center": ("중앙으로", ("중앙", "가운데"),
+               lambda s: {"center_bias": _clamp(s.center_bias + 0.4), "zone_pull": _clamp(max(s.zone_pull, 0.8))}),
+    "edge": ("외곽으로", ("외곽", "구석", "가장자리"),
+             lambda s: {"center_bias": _clamp(s.center_bias - 0.4), "zone_pull": _clamp(max(s.zone_pull, 0.8))}),
 }
 TEMPORARY = {"retreat": TEMP_RETREAT_SECONDS}
 

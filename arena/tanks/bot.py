@@ -51,17 +51,35 @@ def _decide(world: World, me: Tank) -> tuple[float, float, float, bool]:
 
     # Keep away from NPCs if told to, and from the opponent when not engaging it.
     avoid = [t for t in visible if _dist(me, t) < 300 and (t.is_ai or s.npc_policy == "avoid") and me.is_ai]
-    farm = _farm(world, me)
+    fx, fy, aim, fire = _farm(world, me)
+    px, py = _zone_pull(me)
     if avoid:
         npc = min(avoid, key=lambda t: _dist(me, t))
         ax, ay = _unit(me.x - npc.x, me.y - npc.y)
-        fx, fy, aim, fire = farm
-        return fx * 0.4 + ax, fy * 0.4 + ay, aim, fire
+        return fx * 0.4 + ax + px, fy * 0.4 + ay + py, aim, fire
     if s.seek > 0 and me.is_ai and not any(t.is_ai for t in visible):
         sx, sy = _seek(world, me)
-        fx, fy, aim, fire = farm
-        return fx * (1 - s.seek) + sx * s.seek * 1.5, fy * (1 - s.seek) + sy * s.seek * 1.5, aim, fire
-    return farm
+        return fx * (1 - s.seek) + sx * s.seek * 1.5 + px, fy * (1 - s.seek) + sy * s.seek * 1.5 + py, aim, fire
+    return fx + px, fy + py, aim, fire
+
+
+def _zone_pull(me: Tank) -> tuple[float, float]:
+    """Drift towards the ring that center_bias prefers (1 = map centre, 0 = near the edge).
+
+    center_bias alone only changes which visible shape is picked; zone_pull makes the tank actually
+    relocate. 0 (the default) adds nothing, so older strategies behave exactly as before.
+    """
+    s = me.strategy
+    if s.zone_pull <= 0:
+        return 0.0, 0.0
+    dx, dy = me.x - CENTRE, me.y - CENTRE
+    r = math.hypot(dx, dy)
+    error = r - (1 - s.center_bias) * CENTRE * 0.9
+    if abs(error) < 60:
+        return 0.0, 0.0
+    ux, uy = _unit(dx, dy) if r > 1e-6 else (1.0, 0.0)
+    weight = 1.5 * s.zone_pull * min(1.0, abs(error) / 200) * (1 if error > 0 else -1)
+    return -ux * weight, -uy * weight
 
 
 def _seek(world: World, me: Tank) -> tuple[float, float]:
