@@ -6,6 +6,7 @@
     uv run python -m arena pong --left claude --right codex     # coach pong, watch live
     uv run python -m arena pong --left random --right fixed --fast   # offline, terminal only
     uv run python -m arena tanks --first claude --second codex   # coach tanks, watch live
+    uv run python -m arena records        # rebuild matches/README.md
 
 `claude` and `codex` run the subscription-authenticated CLIs and require the
 billing preflight to pass; the other agents are offline dummies.
@@ -213,6 +214,15 @@ def replay_cmd(args: argparse.Namespace) -> int:
     return 1
 
 
+def records_cmd(args: argparse.Namespace) -> int:
+    from arena.records import build_index
+
+    text, rows = build_index(MATCHES_DIR)
+    (MATCHES_DIR / "README.md").write_text(text, encoding="utf-8")
+    print(f"wrote {MATCHES_DIR / 'README.md'} ({len(rows)} finished matches)")
+    return 0
+
+
 def add_match_options(p: argparse.ArgumentParser) -> None:
     p.add_argument("--black", choices=AGENTS, default="heuristic")
     p.add_argument("--white", choices=AGENTS, default="random")
@@ -260,6 +270,8 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--no-browser", action="store_true")
     t.add_argument("--start-delay", type=float, default=2.0)
 
+    sub.add_parser("records", help="rebuild the finished-match index at matches/README.md")
+
     r = sub.add_parser("replay", help="verify a match log by replaying it")
     r.add_argument("log")
 
@@ -273,6 +285,8 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(pong(args))
         if args.command == "tanks":
             return asyncio.run(tanks(args))
+        if args.command == "records":
+            return records_cmd(args)
     except BillingGuardError as exc:
         print(f"[billing] {exc}", file=sys.stderr)
         return 2

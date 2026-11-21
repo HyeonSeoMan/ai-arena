@@ -1,5 +1,4 @@
 .DS_Store
-matches/
 __pycache__/
 .venv/
 .pytest_cache/
