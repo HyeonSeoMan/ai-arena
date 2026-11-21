@@ -20,7 +20,15 @@ Listener = Callable[[Event], None]
 MAX_RAW_CHARS = 4000
 
 
+PARTIAL_SUFFIX = ".part"
+
+
 class EventLog:
+    """Writes to `<path>.part` while the match runs; renamed to `path` only once it has ended.
+
+    Aborted or crashed matches therefore stay as `.part` files, which git ignores.
+    """
+
     def __init__(self, match_id: str, path: Path | None = None):
         self.match_id = match_id
         self.path = path
@@ -29,7 +37,8 @@ class EventLog:
         self._file = None
         if path is not None:
             path.parent.mkdir(parents=True, exist_ok=True)
-            self._file = path.open("w", encoding="utf-8")
+            self._partial = path.with_name(path.name + PARTIAL_SUFFIX)
+            self._file = self._partial.open("w", encoding="utf-8")
 
     def subscribe(self, listener: Listener) -> None:
         self._listeners.append(listener)
@@ -57,10 +66,16 @@ class EventLog:
         for listener in self._listeners:
             listener(event)
 
+    @property
+    def finished(self) -> bool:
+        return bool(self.events) and self.events[-1]["type"] == "match_ended"
+
     def close(self) -> None:
         if self._file is not None:
             self._file.close()
             self._file = None
+            if self.finished:
+                self._partial.replace(self.path)
 
 
 def new_match_id() -> str:

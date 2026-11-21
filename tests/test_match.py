@@ -162,3 +162,16 @@ def test_parse_move_extracts_json(raw, expected):
 @pytest.mark.parametrize("raw", ["", "row 4 col 4", '{"row": 4}', "{broken"])
 def test_parse_move_reports_error(raw):
     assert parse_move(raw).error is not None
+
+
+def test_log_stays_partial_until_the_match_ends(tmp_path):
+    path = tmp_path / "m.jsonl"
+    aborted = EventLog("aborted", path)
+    aborted.emit("match_started")
+    aborted.close()
+    assert not path.exists() and (tmp_path / "m.jsonl.part").exists()
+
+    log = EventLog("done", path)
+    run(HeuristicAgent(seed=1), RandomAgent(seed=1), log=log)
+    log.close()
+    assert path.exists() and not (tmp_path / "m.jsonl.part").exists()
