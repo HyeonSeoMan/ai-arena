@@ -5,6 +5,7 @@
 
 | 경기 ID | 게임 | 참가자 | 실제 AI | 결과 | 로그 |
 |---|---|---|---|---|---|
+| 20261122-044141-cb2647 | Coach Tanks | claude vs codex | 예 | claude 승 (3 : 0 킬) | [tanks/20261122-044141-cb2647.jsonl](tanks/20261122-044141-cb2647.jsonl) |
 | 20261122-043458-cba128 | Coach Tanks | random vs fixed | 더미 | fixed 승 (0 : 3 킬) | [tanks/20261122-043458-cba128.jsonl](tanks/20261122-043458-cba128.jsonl) |
 | 20261122-043329-7165b8 | Coach Tanks | random vs fixed | 더미 | fixed 승 (0 : 3 킬) | [tanks/20261122-043329-7165b8.jsonl](tanks/20261122-043329-7165b8.jsonl) |
 | 20261122-034546-0d649f | Coach Pong | claude vs codex | 예 | codex 승 (3 : 7) | [pong/20261122-034546-0d649f.jsonl](pong/20261122-034546-0d649f.jsonl) |
