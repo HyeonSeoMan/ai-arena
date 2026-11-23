@@ -15,6 +15,7 @@
             --field: #2a2c30; --grid: #33363b; --good: #5fcf86; --bad: #ff7a63; --outline: #111; --barrel: #777; }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }  /* class display rules must not override hidden */
   body { margin: 0; background: var(--bg); color: var(--ink);
          font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", sans-serif; }
   header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }

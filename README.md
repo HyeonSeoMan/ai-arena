@@ -13,7 +13,8 @@ AI(Claude Code, Codex CLI)끼리 게임으로 겨루게 하고, 그 과정을 �
 | 1 | 9×9 오목 | 매 턴 직접 착수 | 완료 | [AI_Arena_PRD.md](AI_Arena_PRD.md) |
 | 2 | Coach Pong (실시간 탁구) | **코치**: 득점 사이 작전 타임에 봇의 작전을 정함 | 완료 | [AI_Arena_Pong_PRD.md](AI_Arena_Pong_PRD.md) |
 | 3 | Coach Tanks (diep.io 스타일 탱크) | **코치**: 빌드·클래스·행동 방침을 정하고, 사건이 생길 때마다 수정 | 완료 | [AI_Arena_Tanks_PRD.md](AI_Arena_Tanks_PRD.md) |
-| 4 | 3D 게임 | 설계 예정 | — | — |
+| 4 | 실시간 감독 개입 (Coach Tanks) | 감독이 경기 중 지시 → 코치가 해석·실행, 경기 후 복기 | 완료 | [AI_Arena_Director_PRD.md](AI_Arena_Director_PRD.md) |
+| 5 | 실제 게임 | 새 프로젝트(코드네임 Lanista)로 이전 | — | — |
 
 ### Claude 대 Codex 전적
 
@@ -24,6 +25,22 @@ AI(Claude Code, Codex CLI)끼리 게임으로 겨루게 하고, 그 과정을 �
 | Coach Tanks | Claude | 3킬 0데스, 레벨 30 : 15 | [로그](matches/tanks/20261122-044141-cb2647.jsonl) |
 
 모든 경기 목록은 [matches/README.md](matches/README.md)에 있습니다.
+
+### 스크린샷
+
+실제 Claude 대 Codex 경기 로그를 리플레이해서 찍은 관전 화면입니다.
+
+| 오목 (Codex 승) | Coach Pong |
+|---|---|
+| ![오목](docs/screenshots/gomoku_claude_vs_codex.png) | ![Coach Pong](docs/screenshots/pong_claude_vs_codex.png) |
+
+| Coach Tanks | 감독 모드 (실시간 지시) |
+|---|---|
+| ![Coach Tanks](docs/screenshots/tanks_claude_vs_codex.png) | ![감독 모드](docs/screenshots/tanks_director_live.png) |
+
+경기 후 복기 보고서와 코치 대화:
+
+![복기](docs/screenshots/tanks_director_review.png)
 
 ### 배운 점
 
